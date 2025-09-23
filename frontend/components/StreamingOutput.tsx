@@ -32,10 +32,18 @@ export function StreamingOutput({
   const [copied, setCopied] = useState(false)
   const [isNearBottom, setIsNearBottom] = useState(true)
 
-  // Auto-scroll to bottom when new content is added
+  // Auto-scroll to bottom when new content is added (throttled)
   useEffect(() => {
     if (autoScroll && isNearBottom && outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight
+      // Use requestAnimationFrame to throttle scrolling
+      const scrollToBottom = () => {
+        if (outputRef.current) {
+          outputRef.current.scrollTop = outputRef.current.scrollHeight
+        }
+      }
+      
+      const rafId = requestAnimationFrame(scrollToBottom)
+      return () => cancelAnimationFrame(rafId)
     }
   }, [content, autoScroll, isNearBottom])
 
@@ -183,8 +191,29 @@ export function StreamingOutput({
 
         {hasContent && (
           <div className={cn('output-text', isStreaming && 'streaming-text')}>
-            <pre>{content}</pre>
-            {isStreaming && <span className="cursor" aria-hidden="true">|</span>}
+            <pre style={{ 
+              margin: 0, 
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              // Optimize rendering performance
+              transform: 'translateZ(0)', // Force GPU acceleration
+              willChange: isStreaming ? 'contents' : 'auto' // Hint to browser for optimization
+            }}>
+              {content}
+            </pre>
+            {isStreaming && (
+              <span 
+                className="cursor" 
+                aria-hidden="true"
+                style={{
+                  // Reduce cursor flashing
+                  animation: 'blink 1s infinite',
+                  opacity: 1
+                }}
+              >
+                |
+              </span>
+            )}
           </div>
         )}
       </div>

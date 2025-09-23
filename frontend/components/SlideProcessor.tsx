@@ -1,11 +1,11 @@
 'use client'
 
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import { SlideInput } from './SlideInput'
 import { StreamingOutput } from './StreamingOutput'
 import { SubmitButton } from './SubmitButton'
 import { ThemeToggle } from './ThemeToggle'
-import { validateSlideInput } from '@/lib/mastra-client'
+import { validateSlideInput, type StreamChunk } from '@/lib/mastra-client'
 import { cn, formatError } from '@/lib/utils'
 
 export interface SlideProcessorProps {
@@ -29,6 +29,39 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
     error: null,
     presentationId: null,
   })
+
+  // Ref to track the EventSource connection
+  const eventSourceRef = useRef<EventSource | null>(null)
+  
+  // Buffer for text deltas to reduce re-renders
+  const textBufferRef = useRef<string>('')
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Function to flush buffered text updates
+  const flushTextBuffer = useCallback(() => {
+    if (textBufferRef.current) {
+      setState(prev => ({
+        ...prev,
+        content: prev.content + textBufferRef.current,
+      }))
+      textBufferRef.current = ''
+    }
+  }, [])
+
+  // Debounced update function
+  const updateContent = useCallback((newText: string) => {
+    textBufferRef.current += newText
+    
+    // Clear existing timeout
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current)
+    }
+    
+    // Set new timeout to batch updates
+    updateTimeoutRef.current = setTimeout(() => {
+      flushTextBuffer()
+    }, 50) // Update every 50ms instead of every character
+  }, [flushTextBuffer])
 
   const handleInputChange = useCallback((value: string) => {
     setInput(value)
@@ -55,30 +88,110 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
     })
 
     try {
-      // Make a simple fetch request to the API
-      const response = await fetch(
+      // Create EventSource connection to streaming API
+      const eventSource = new EventSource(
         `/api/stream-slides?presentationId=${encodeURIComponent(presentationId)}`
       )
+      eventSourceRef.current = eventSource
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+      eventSource.onopen = () => {
+        console.log('Stream connection opened')
       }
 
-      const result = await response.json()
+      eventSource.onmessage = (event) => {
+        try {
+          const chunk: StreamChunk = JSON.parse(event.data)
 
-      if (result.error) {
-        throw new Error(result.error)
+          setState(prev => {
+            switch (chunk.type) {
+              case 'text-delta':
+                // Use buffered updates for smoother rendering
+                updateContent(chunk.content || '')
+                return prev // Don't update state immediately
+
+              case 'start':
+                return prev // Already handled in state initialization
+
+              case 'finish':
+                // Flush any remaining buffer and mark as complete
+                flushTextBuffer()
+                return {
+                  ...prev,
+                  isProcessing: false,
+                }
+
+              case 'error':
+                return {
+                  ...prev,
+                  isProcessing: false,
+                  error: chunk.error || 'An error occurred',
+                }
+
+              case 'tool-call':
+                // Show tool activity with better formatting (immediate update)
+                if (updateTimeoutRef.current) {
+                  clearTimeout(updateTimeoutRef.current)
+                  flushTextBuffer()
+                }
+                const toolMessage = chunk.data?.message || 'Calling tool...'
+                const toolName = chunk.data?.toolName || 'Unknown tool'
+                return {
+                  ...prev,
+                  content: prev.content + `\n🔧 ${toolName}: ${toolMessage}\n`,
+                }
+
+              case 'tool-result':
+                // Show tool completion (immediate update)
+                if (updateTimeoutRef.current) {
+                  clearTimeout(updateTimeoutRef.current)
+                  flushTextBuffer()
+                }
+                const resultMessage = chunk.data?.message || 'Tool completed'
+                const resultName = chunk.data?.toolName || 'Tool'
+                return {
+                  ...prev,
+                  content: prev.content + `✅ ${resultName}: ${resultMessage}\n\n`,
+                }
+
+              case 'text-start':
+                // Add a separator for when actual text generation starts (immediate update)
+                if (updateTimeoutRef.current) {
+                  clearTimeout(updateTimeoutRef.current)
+                  flushTextBuffer()
+                }
+                return {
+                  ...prev,
+                  content: prev.content + '📝 Generating presentation script:\n\n',
+                }
+
+              case 'text-end':
+                // Text generation completed - flush final buffer
+                flushTextBuffer()
+                return prev
+
+              default:
+                console.log('Unknown chunk type:', chunk.type, chunk)
+                return prev
+            }
+          })
+        } catch (error) {
+          console.error('Error parsing stream chunk:', error)
+        }
       }
 
-      // Set the complete content at once
-      setState(prev => ({
-        ...prev,
-        isProcessing: false,
-        content: result.content || '',
-      }))
+      eventSource.onerror = (error) => {
+        console.error('EventSource error:', error)
+        setState(prev => ({
+          ...prev,
+          isProcessing: false,
+          error: 'Connection error. Please try again.',
+        }))
+        eventSource.close()
+        eventSourceRef.current = null
+      }
 
     } catch (error) {
-      console.error('Error generating script:', error)
+      console.error('Error starting stream:', error)
       setState(prev => ({
         ...prev,
         isProcessing: false,
@@ -87,7 +200,37 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
     }
   }, [isValidInput, presentationId, state.isProcessing])
 
+  const handleStop = useCallback(() => {
+    // Clean up any pending updates
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current)
+      updateTimeoutRef.current = null
+    }
+    
+    // Flush any remaining buffer
+    flushTextBuffer()
+    
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+      eventSourceRef.current = null
+    }
+
+    setState(prev => ({
+      ...prev,
+      isProcessing: false,
+    }))
+  }, [flushTextBuffer])
+
   const handleClear = useCallback(() => {
+    // Clean up any pending updates
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current)
+      updateTimeoutRef.current = null
+    }
+    
+    // Clear text buffer
+    textBufferRef.current = ''
+    
     setState(prev => ({
       ...prev,
       content: '',
@@ -98,6 +241,18 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
   const handleCopy = useCallback(() => {
     // Optional: Add analytics or user feedback here
     console.log('Content copied to clipboard')
+  }, [])
+
+  // Clean up EventSource and timeouts on unmount
+  React.useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
+      }
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current)
+      }
+    }
   }, [])
 
   return (
@@ -130,27 +285,43 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
               />
 
               <div className="form-actions">
-                <SubmitButton
-                  type="submit"
-                  disabled={!isValidInput || state.isProcessing}
-                  isLoading={state.isProcessing}
-                  variant="primary"
-                  size="lg"
-                  fullWidth
-                  icon={
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                      <path
-                        d="M3 8l3 3 7-7"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  }
-                >
-                  {state.isProcessing ? 'Generating Script...' : 'Generate Script'}
-                </SubmitButton>
+                {state.isProcessing ? (
+                  <SubmitButton
+                    type="button"
+                    onClick={handleStop}
+                    variant="secondary"
+                    size="lg"
+                    fullWidth
+                    icon={
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <rect x="4" y="4" width="8" height="8" fill="currentColor" />
+                      </svg>
+                    }
+                  >
+                    Stop Generation
+                  </SubmitButton>
+                ) : (
+                  <SubmitButton
+                    type="submit"
+                    disabled={!isValidInput}
+                    variant="primary"
+                    size="lg"
+                    fullWidth
+                    icon={
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path
+                          d="M3 8l3 3 7-7"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    }
+                  >
+                    Generate Script
+                  </SubmitButton>
+                )}
               </div>
             </form>
           </section>

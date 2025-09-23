@@ -33,7 +33,7 @@ export interface SlideProcessRequest {
 }
 
 export interface StreamChunk {
-  type: 'text-delta' | 'tool-call' | 'tool-result' | 'start' | 'finish' | 'error'
+  type: 'text-delta' | 'text-start' | 'text-end' | 'tool-call' | 'tool-result' | 'start' | 'finish' | 'error'
   content?: string
   data?: any
   error?: string
