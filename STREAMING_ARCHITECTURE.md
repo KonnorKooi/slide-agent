@@ -9,11 +9,11 @@ Google: gemini-pro, gemini-1.5-pro
 Mistral: mistral-large, mistral-medium, mistral-small
 Cohere: command-r-plus, command-r
 
-## 🏗️ **Overview**
+## **Overview**
 
 The Slide Agent implements a sophisticated streaming architecture that allows users to see AI-generated presentation scripts appear in real-time as they're being created. The system uses Server-Sent Events (SSE) to stream data from the Mastra backend through a Next.js API route to a React frontend.
 
-## 📊 **Architecture Diagram**
+## **Architecture Diagram**
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
@@ -25,7 +25,7 @@ The Slide Agent implements a sophisticated streaming architecture that allows us
    Text Generation           Streaming               Management             Rendering
 ```
 
-## 🔧 **Components Breakdown**
+## **Components Breakdown**
 
 ### 1. **Mastra Backend** (`http://localhost:4112`)
 
@@ -218,7 +218,7 @@ eventSource.onmessage = (event) => {
 </pre>
 ```
 
-## 🔄 **Data Flow**
+## **Data Flow**
 
 ### **1. Initialization**
 ```
@@ -243,7 +243,7 @@ SlideProcessor shows: "🔧 Google Slides API: Accessing..."
     ↓
 Tool completes, streams tool-result chunks
     ↓
-SlideProcessor shows: "✅ Slides processed: Continuing..."
+SlideProcessor shows: "✅ Slides processed: Continuing..." (this is commented out right now)
 ```
 
 ### **3. Text Generation Phase**
@@ -256,7 +256,7 @@ AI generates text in small chunks (text-delta)
     ↓
 Each chunk updates React state immediately
     ↓
-StreamingOutput renders new content without blinking
+StreamingOutput renders new content
     ↓
 Text appears character-by-character in real-time
 ```
@@ -287,7 +287,7 @@ UI shows completion state
 - **Layout Containment**: `contain: 'layout style paint'` prevents unnecessary reflows
 - **Optimized Re-renders**: React state updates only when necessary
 
-## 🐛 **Common Issues & Solutions**
+## **Common Issues & Solutions**
 
 ### **Problem**: Text Blinking During Streaming
 **Cause**: React re-rendering entire text block on each update
@@ -305,7 +305,7 @@ UI shows completion state
 **Cause**: Network issues or backend unavailability
 **Solution**: Proper error handling with user feedback and retry mechanisms
 
-## 📝 **Stream Chunk Types**
+## **Stream Chunk Types**
 
 | Chunk Type | Purpose | Frontend Action |
 |------------|---------|-----------------|
@@ -319,7 +319,7 @@ UI shows completion state
 | `finish` | Stream complete | Close EventSource, mark processing complete |
 | `error` | Error occurred | Display error message |
 
-## 🔗 **Connection Management**
+## **Connection Management**
 
 ### **EventSource Connection**
 ```typescript
@@ -347,7 +347,7 @@ eventSource.onerror = (error) => {
 4. **Error**: Network issues → Show error message, allow retry
 5. **Cleanup**: Component unmount or user stops → Graceful shutdown
 
-## 🎯 **Key Benefits**
+## **Key Benefits**
 
 1. **Real-time Feedback**: Users see progress immediately with slide-by-slide updates
 2. **Smooth Experience**: No jarring waits or sudden content appearances
@@ -357,7 +357,7 @@ eventSource.onerror = (error) => {
 6. **Scalability**: Streaming reduces memory usage vs. waiting for complete response
 7. **Clean Completion**: Proactive EventSource closure prevents false error messages
 
-## 🛠️ **Performance Optimizations**
+## **Performance Optimizations**
 
 - **Flexible Payload Handling**: Supports both legacy and new Mastra chunk formats
 - **Selective Message Display**: Shows relevant progress, hides verbose tool completion messages
@@ -365,7 +365,7 @@ eventSource.onerror = (error) => {
 - **React State Optimization**: Direct state updates without buffering conflicts
 - **GPU Acceleration**: CSS transforms for smooth text rendering
 
-## 🚀 **Future Enhancements**
+## **Future Enhancements**
 
 - **Reconnection Logic**: Auto-retry on connection drops
 - **Progress Indicators**: Show percentage completion
