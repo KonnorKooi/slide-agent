@@ -1,8 +1,54 @@
 import { NextRequest } from 'next/server'
 
+// Helper function to generate style-specific prompts
+function generatePrompt(presentationId: string, style: string): string {
+  const basePrompt = `Generate a complete presentation script for presentation ID: ${presentationId}`
+  
+  const styleInstructions = {
+    concise: `${basePrompt}
+
+Style: CONCISE
+- Keep explanations brief and to-the-point
+- Focus on key highlights and main points
+- Use bullet points and short sentences
+- Aim for clarity and efficiency
+- Avoid redundant information`,
+
+    explanatory: `${basePrompt}
+
+Style: EXPLANATORY  
+- Provide detailed explanations with context
+- Include background information and examples
+- Explain the significance of each point
+- Use clear, educational language
+- Help the audience understand the why behind each concept`,
+
+    formal: `${basePrompt}
+
+Style: FORMAL
+- Use professional, business-appropriate language
+- Maintain a serious and authoritative tone
+- Include proper transitions and structure
+- Use industry-standard terminology
+- Ensure content is suitable for corporate/academic settings`,
+
+    storytelling: `${basePrompt}
+
+Style: STORY-TELLING
+- Create a narrative flow that engages the audience
+- Use storytelling techniques and anecdotes
+- Build connections between ideas like chapters in a story
+- Include emotional elements and relatable examples
+- Make the presentation memorable and compelling`
+  }
+
+  return styleInstructions[style as keyof typeof styleInstructions] || styleInstructions.explanatory
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const presentationId = searchParams.get('presentationId')
+  const style = searchParams.get('style') || 'explanatory'
 
   if (!presentationId) {
     return new Response(
@@ -27,7 +73,10 @@ export async function GET(request: NextRequest) {
 
       try {
         // Send start event
-        sendEvent('start', { presentationId })
+        sendEvent('start', { presentationId, style })
+
+        // Generate style-specific prompt
+        const prompt = generatePrompt(presentationId, style)
 
         // Make streaming call to Mastra API
         const mastraResponse = await fetch('http://localhost:4111/api/agents/SlideAgent/stream/vnext', {
@@ -38,10 +87,10 @@ export async function GET(request: NextRequest) {
           body: JSON.stringify({
             messages: [{
               role: 'user',
-              content: `Generate a complete presentation script for presentation ID: ${presentationId}`
+              content: prompt
             }],
             memory: {
-              thread: `presentation-${presentationId}-${Date.now()}`,
+              thread: `presentation-${presentationId}-${style}-${Date.now()}`,
               resource: 'slide-agent'
             }
           })

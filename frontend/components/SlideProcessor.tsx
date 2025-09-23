@@ -5,6 +5,7 @@ import { SlideInput } from './SlideInput'
 import { StreamingOutput } from './StreamingOutput'
 import { SubmitButton } from './SubmitButton'
 import { ThemeToggle } from './ThemeToggle'
+import { PresentationStyleSelector, type PresentationStyle } from './PresentationStyleSelector'
 import { validateSlideInput, type StreamChunk } from '@/lib/mastra-client'
 import { cn, formatError } from '@/lib/utils'
 
@@ -25,6 +26,7 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
   const [input, setInput] = useState('')
   const [isValidInput, setIsValidInput] = useState(false)
   const [presentationId, setPresentationId] = useState<string | null>(null)
+  const [presentationStyle, setPresentationStyle] = useState<PresentationStyle>('explanatory')
   const [state, setState] = useState<ProcessingState>({
     isProcessing: false,
     content: '',
@@ -44,6 +46,10 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
   const handleValidationChange = useCallback((isValid: boolean, id?: string) => {
     setIsValidInput(isValid)
     setPresentationId(id || null)
+  }, [])
+
+  const handleStyleChange = useCallback((style: PresentationStyle) => {
+    setPresentationStyle(style)
   }, [])
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
@@ -66,7 +72,7 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
     try {
       // Create EventSource connection to streaming API
       const eventSource = new EventSource(
-        `/api/stream-slides?presentationId=${encodeURIComponent(presentationId)}`
+        `/api/stream-slides?presentationId=${encodeURIComponent(presentationId)}&style=${encodeURIComponent(presentationStyle)}`
       )
       eventSourceRef.current = eventSource
 
@@ -263,6 +269,12 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
                 required
                 autoFocus
                 placeholder="Enter Google Slides URL or presentation ID..."
+              />
+
+              <PresentationStyleSelector
+                value={presentationStyle}
+                onChange={handleStyleChange}
+                disabled={state.isProcessing}
               />
 
               <div className="form-actions">

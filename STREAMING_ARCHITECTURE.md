@@ -1,6 +1,13 @@
 # Text Streaming Architecture - Slide Agent
 
 This document explains how real-time text streaming works in the Slide Agent application, from backend to frontend rendering.
+Streaming will work with these models that support AI SDK
+
+OpenAI: gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo
+Anthropic: claude-3-opus, claude-3-sonnet, claude-3-haiku
+Google: gemini-pro, gemini-1.5-pro
+Mistral: mistral-large, mistral-medium, mistral-small
+Cohere: command-r-plus, command-r
 
 ## 🏗️ **Overview**
 
