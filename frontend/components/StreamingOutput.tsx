@@ -190,14 +190,15 @@ export function StreamingOutput({
         )}
 
         {hasContent && (
-          <div className={cn('output-text', isStreaming && 'streaming-text')}>
+          <div className="output-text">
             <pre style={{ 
               margin: 0, 
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
               // Optimize rendering performance
               transform: 'translateZ(0)', // Force GPU acceleration
-              willChange: isStreaming ? 'contents' : 'auto' // Hint to browser for optimization
+              // Prevent layout thrashing
+              contain: 'layout style paint',
             }}>
               {content}
             </pre>
@@ -206,12 +207,15 @@ export function StreamingOutput({
                 className="cursor" 
                 aria-hidden="true"
                 style={{
-                  // Reduce cursor flashing
-                  animation: 'blink 1s infinite',
-                  opacity: 1
+                  display: 'inline-block',
+                  width: '2px',
+                  height: '1em',
+                  backgroundColor: 'var(--color-primary)',
+                  marginLeft: '2px',
+                  // Use a simpler, less aggressive animation
+                  animation: 'blink 1.5s ease-in-out infinite',
                 }}
               >
-                |
               </span>
             )}
           </div>

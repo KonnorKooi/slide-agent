@@ -17,6 +17,7 @@ interface ProcessingState {
   content: string
   error: string | null
   presentationId: string | null
+  textGenerationComplete: boolean
 }
 
 export function SlideProcessor({ className }: SlideProcessorProps) {
@@ -28,40 +29,11 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
     content: '',
     error: null,
     presentationId: null,
+    textGenerationComplete: false,
   })
 
   // Ref to track the EventSource connection
   const eventSourceRef = useRef<EventSource | null>(null)
-  
-  // Buffer for text deltas to reduce re-renders
-  const textBufferRef = useRef<string>('')
-  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-
-  // Function to flush buffered text updates
-  const flushTextBuffer = useCallback(() => {
-    if (textBufferRef.current) {
-      setState(prev => ({
-        ...prev,
-        content: prev.content + textBufferRef.current,
-      }))
-      textBufferRef.current = ''
-    }
-  }, [])
-
-  // Debounced update function
-  const updateContent = useCallback((newText: string) => {
-    textBufferRef.current += newText
-    
-    // Clear existing timeout
-    if (updateTimeoutRef.current) {
-      clearTimeout(updateTimeoutRef.current)
-    }
-    
-    // Set new timeout to batch updates
-    updateTimeoutRef.current = setTimeout(() => {
-      flushTextBuffer()
-    }, 50) // Update every 50ms instead of every character
-  }, [flushTextBuffer])
 
   const handleInputChange = useCallback((value: string) => {
     setInput(value)
@@ -85,6 +57,7 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
       content: '',
       error: null,
       presentationId,
+      textGenerationComplete: false,
     })
 
     try {
@@ -105,16 +78,16 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
           setState(prev => {
             switch (chunk.type) {
               case 'text-delta':
-                // Use buffered updates for smoother rendering
-                updateContent(chunk.content || '')
-                return prev // Don't update state immediately
+                // Direct state update without buffering
+                return {
+                  ...prev,
+                  content: prev.content + (chunk.content || ''),
+                }
 
               case 'start':
                 return prev // Already handled in state initialization
 
               case 'finish':
-                // Flush any remaining buffer and mark as complete
-                flushTextBuffer()
                 return {
                   ...prev,
                   isProcessing: false,
@@ -128,11 +101,7 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
                 }
 
               case 'tool-call':
-                // Show tool activity with better formatting (immediate update)
-                if (updateTimeoutRef.current) {
-                  clearTimeout(updateTimeoutRef.current)
-                  flushTextBuffer()
-                }
+                // Show tool activity with better formatting
                 const toolMessage = chunk.data?.message || 'Calling tool...'
                 const toolName = chunk.data?.toolName || 'Unknown tool'
                 return {
@@ -141,33 +110,30 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
                 }
 
               case 'tool-result':
-                // Show tool completion (immediate update)
-                if (updateTimeoutRef.current) {
-                  clearTimeout(updateTimeoutRef.current)
-                  flushTextBuffer()
+                // Only show tool completion messages before text generation is complete
+                if (!prev.textGenerationComplete) {
+                  const resultMessage = chunk.data?.message || 'Tool completed'
+                  const resultName = chunk.data?.toolName || 'Tool'
+                  return {
+                    ...prev,
+                    content: prev.content + `✅ ${resultName}: ${resultMessage}\n\n`,
+                  }
                 }
-                const resultMessage = chunk.data?.message || 'Tool completed'
-                const resultName = chunk.data?.toolName || 'Tool'
-                return {
-                  ...prev,
-                  content: prev.content + `✅ ${resultName}: ${resultMessage}\n\n`,
-                }
+                return prev
 
               case 'text-start':
-                // Add a separator for when actual text generation starts (immediate update)
-                if (updateTimeoutRef.current) {
-                  clearTimeout(updateTimeoutRef.current)
-                  flushTextBuffer()
-                }
+                // Add a separator for when actual text generation starts
                 return {
                   ...prev,
                   content: prev.content + '📝 Generating presentation script:\n\n',
                 }
 
               case 'text-end':
-                // Text generation completed - flush final buffer
-                flushTextBuffer()
-                return prev
+                // Text generation completed - mark it so we stop showing tool results
+                return {
+                  ...prev,
+                  textGenerationComplete: true,
+                }
 
               default:
                 console.log('Unknown chunk type:', chunk.type, chunk)
@@ -201,15 +167,6 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
   }, [isValidInput, presentationId, state.isProcessing])
 
   const handleStop = useCallback(() => {
-    // Clean up any pending updates
-    if (updateTimeoutRef.current) {
-      clearTimeout(updateTimeoutRef.current)
-      updateTimeoutRef.current = null
-    }
-    
-    // Flush any remaining buffer
-    flushTextBuffer()
-    
     if (eventSourceRef.current) {
       eventSourceRef.current.close()
       eventSourceRef.current = null
@@ -219,22 +176,14 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
       ...prev,
       isProcessing: false,
     }))
-  }, [flushTextBuffer])
+  }, [])
 
   const handleClear = useCallback(() => {
-    // Clean up any pending updates
-    if (updateTimeoutRef.current) {
-      clearTimeout(updateTimeoutRef.current)
-      updateTimeoutRef.current = null
-    }
-    
-    // Clear text buffer
-    textBufferRef.current = ''
-    
     setState(prev => ({
       ...prev,
       content: '',
       error: null,
+      textGenerationComplete: false,
     }))
   }, [])
 
@@ -243,14 +192,11 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
     console.log('Content copied to clipboard')
   }, [])
 
-  // Clean up EventSource and timeouts on unmount
+  // Clean up EventSource on unmount
   React.useEffect(() => {
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close()
-      }
-      if (updateTimeoutRef.current) {
-        clearTimeout(updateTimeoutRef.current)
       }
     }
   }, [])
