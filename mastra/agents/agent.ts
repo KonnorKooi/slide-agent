@@ -43,6 +43,6 @@ Slide 3 - "Title of Slide"
 - Focus on making natural, flowing presentation scripts
 
 The presentation ID is the long string found in Google Slides URLs between '/d/' and '/edit'.`,
-    model: openai("gpt-4.0"),
+    model: openai("gpt-4o"),
     tools: { getSlideCount, getSlide },
 });

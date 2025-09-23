@@ -1,11 +1,11 @@
 'use client'
 
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback } from 'react'
 import { SlideInput } from './SlideInput'
 import { StreamingOutput } from './StreamingOutput'
 import { SubmitButton } from './SubmitButton'
 import { ThemeToggle } from './ThemeToggle'
-import { validateSlideInput, type StreamChunk } from '@/lib/mastra-client'
+import { validateSlideInput } from '@/lib/mastra-client'
 import { cn, formatError } from '@/lib/utils'
 
 export interface SlideProcessorProps {
@@ -29,9 +29,6 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
     error: null,
     presentationId: null,
   })
-
-  // Ref to track the EventSource connection
-  const eventSourceRef = useRef<EventSource | null>(null)
 
   const handleInputChange = useCallback((value: string) => {
     setInput(value)
@@ -58,77 +55,30 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
     })
 
     try {
-      // Create EventSource connection to streaming API
-      const eventSource = new EventSource(
+      // Make a simple fetch request to the API
+      const response = await fetch(
         `/api/stream-slides?presentationId=${encodeURIComponent(presentationId)}`
       )
-      eventSourceRef.current = eventSource
 
-      eventSource.onopen = () => {
-        console.log('Stream connection opened')
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      eventSource.onmessage = (event) => {
-        try {
-          const chunk: StreamChunk = JSON.parse(event.data)
+      const result = await response.json()
 
-          setState(prev => {
-            switch (chunk.type) {
-              case 'text-delta':
-                return {
-                  ...prev,
-                  content: prev.content + (chunk.content || ''),
-                }
-
-              case 'start':
-                return prev // Already handled in state initialization
-
-              case 'finish':
-                return {
-                  ...prev,
-                  isProcessing: false,
-                }
-
-              case 'error':
-                return {
-                  ...prev,
-                  isProcessing: false,
-                  error: chunk.error || 'An error occurred',
-                }
-
-              case 'tool-call':
-                // Optionally show tool call information
-                return {
-                  ...prev,
-                  content: prev.content + `\n[Using tool: ${chunk.data?.toolName || 'unknown'}]\n`,
-                }
-
-              case 'tool-result':
-                // Tool result is typically included in the text stream
-                return prev
-
-              default:
-                return prev
-            }
-          })
-        } catch (error) {
-          console.error('Error parsing stream chunk:', error)
-        }
+      if (result.error) {
+        throw new Error(result.error)
       }
 
-      eventSource.onerror = (error) => {
-        console.error('EventSource error:', error)
-        setState(prev => ({
-          ...prev,
-          isProcessing: false,
-          error: 'Connection error. Please try again.',
-        }))
-        eventSource.close()
-        eventSourceRef.current = null
-      }
+      // Set the complete content at once
+      setState(prev => ({
+        ...prev,
+        isProcessing: false,
+        content: result.content || '',
+      }))
 
     } catch (error) {
-      console.error('Error starting stream:', error)
+      console.error('Error generating script:', error)
       setState(prev => ({
         ...prev,
         isProcessing: false,
@@ -136,18 +86,6 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
       }))
     }
   }, [isValidInput, presentationId, state.isProcessing])
-
-  const handleStop = useCallback(() => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close()
-      eventSourceRef.current = null
-    }
-
-    setState(prev => ({
-      ...prev,
-      isProcessing: false,
-    }))
-  }, [])
 
   const handleClear = useCallback(() => {
     setState(prev => ({
@@ -160,15 +98,6 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
   const handleCopy = useCallback(() => {
     // Optional: Add analytics or user feedback here
     console.log('Content copied to clipboard')
-  }, [])
-
-  // Clean up EventSource on unmount
-  React.useEffect(() => {
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close()
-      }
-    }
   }, [])
 
   return (
@@ -201,43 +130,27 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
               />
 
               <div className="form-actions">
-                {state.isProcessing ? (
-                  <SubmitButton
-                    type="button"
-                    onClick={handleStop}
-                    variant="secondary"
-                    size="lg"
-                    fullWidth
-                    icon={
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                        <rect x="4" y="4" width="8" height="8" fill="currentColor" />
-                      </svg>
-                    }
-                  >
-                    Stop Generation
-                  </SubmitButton>
-                ) : (
-                  <SubmitButton
-                    type="submit"
-                    disabled={!isValidInput}
-                    variant="primary"
-                    size="lg"
-                    fullWidth
-                    icon={
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                        <path
-                          d="M3 8l3 3 7-7"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    }
-                  >
-                    Generate Script
-                  </SubmitButton>
-                )}
+                <SubmitButton
+                  type="submit"
+                  disabled={!isValidInput || state.isProcessing}
+                  isLoading={state.isProcessing}
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  icon={
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <path
+                        d="M3 8l3 3 7-7"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  }
+                >
+                  {state.isProcessing ? 'Generating Script...' : 'Generate Script'}
+                </SubmitButton>
               </div>
             </form>
           </section>

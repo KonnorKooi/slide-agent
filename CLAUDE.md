@@ -21,16 +21,16 @@ This is a Mastra-based AI agent project that creates slide decks. The project us
 - **Node.js**: Requires Node.js >=20.9.0
 
 ### Key Directories
-- `src/mastra/` - Main Mastra configuration and agent definitions
-- `src/mastra/agents/` - Agent implementations
-- `src/mastra/tools/` - Custom tool implementations (Google Slides integration)
+- `mastra/` - Main Mastra configuration and agent definitions
+- `mastra/agents/` - Agent implementations
+- `mastra/tools/` - Custom tool implementations (Google Slides integration)
 - `.mastra/` - Mastra framework build artifacts and configuration
 
 ### Main Components
-- `src/mastra/index.ts` - Main Mastra instance configuration, registers all agents
-- `src/mastra/agents/agent.ts` - SlideAgent implementation using OpenAI GPT-4o-mini
-- `src/mastra/tools/getSlide.ts` - Google Slides API integration tool
-- `src/mastra/tools/googleAuth.ts` - OAuth 2.0 authentication helper for Google APIs
+- `mastra/index.ts` - Main Mastra instance configuration, registers all agents
+- `mastra/agents/agent.ts` - SlideAgent implementation using OpenAI GPT-4o-mini
+- `mastra/tools/getSlide.ts` - Google Slides API integration tool
+- `mastra/tools/googleAuth.ts` - OAuth 2.0 authentication helper for Google APIs
 
 ### Dependencies
 - **@mastra/core** - Core Mastra framework
@@ -106,9 +106,9 @@ Gets the total number of slides in a Google Slides presentation.
 ## Agent Development
 
 When working with agents:
-- Agents are defined in `src/mastra/agents/`
-- Tools are defined in `src/mastra/tools/`
-- Register new agents in `src/mastra/index.ts`
+- Agents are defined in `mastra/agents/`
+- Tools are defined in `mastra/tools/`
+- Register new agents in `mastra/index.ts`
 - The SlideAgent can retrieve slides from Google Slides presentations via OAuth
 - Agent instructions are defined inline in the agent constructor
 
