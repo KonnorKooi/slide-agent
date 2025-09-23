@@ -145,7 +145,8 @@ export async function GET(request: NextRequest) {
                     break
                   
                   default:
-                    console.log('Unknown chunk type:', chunk.type, chunk)
+                    // Silently handle unknown chunk types
+                    break
                 }
               } catch (parseError) {
                 console.log('Failed to parse chunk:', dataStr)

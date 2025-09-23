@@ -18,6 +18,7 @@ interface ProcessingState {
   error: string | null
   presentationId: string | null
   textGenerationComplete: boolean
+  streamFinished: boolean
 }
 
 export function SlideProcessor({ className }: SlideProcessorProps) {
@@ -30,6 +31,7 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
     error: null,
     presentationId: null,
     textGenerationComplete: false,
+    streamFinished: false,
   })
 
   // Ref to track the EventSource connection
@@ -58,6 +60,7 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
       error: null,
       presentationId,
       textGenerationComplete: false,
+      streamFinished: false,
     })
 
     try {
@@ -78,19 +81,27 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
           setState(prev => {
             switch (chunk.type) {
               case 'text-delta':
-                // Direct state update without buffering
+                // Handle both old format (chunk.content) and new format (chunk.payload.content)
+                const deltaContent = chunk.content || chunk.payload?.content || ''
                 return {
                   ...prev,
-                  content: prev.content + (chunk.content || ''),
+                  content: prev.content + deltaContent,
                 }
 
               case 'start':
                 return prev // Already handled in state initialization
 
               case 'finish':
+                // Close EventSource immediately to prevent error event
+                if (eventSourceRef.current) {
+                  eventSourceRef.current.close()
+                  eventSourceRef.current = null
+                }
                 return {
                   ...prev,
                   isProcessing: false,
+                  textGenerationComplete: true,
+                  streamFinished: true,
                 }
 
               case 'error':
@@ -101,25 +112,43 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
                 }
 
               case 'tool-call':
-                // Show tool activity with better formatting
-                const toolMessage = chunk.data?.message || 'Calling tool...'
-                const toolName = chunk.data?.toolName || 'Unknown tool'
+                // Handle both old and new format for tool calls
+                const toolData = chunk.data || chunk.payload
+                const toolMessage = toolData?.message || 'Calling tool...'
+                const toolName = toolData?.toolName || toolData?.args?.toolName || 'Unknown tool'
                 return {
                   ...prev,
                   content: prev.content + `\n🔧 ${toolName}: ${toolMessage}\n`,
                 }
 
+              case 'tool-call-delta':
+                // Handle streaming tool call arguments - just show progress
+                const toolCallData = chunk.payload
+                const toolCallName = toolCallData?.toolName || 'Tool'
+                return {
+                  ...prev,
+                  content: prev.content.endsWith(`🔧 ${toolCallName}: Building call...\n`) 
+                    ? prev.content 
+                    : prev.content + `🔧 ${toolCallName}: Building call...\n`,
+                }
+
               case 'tool-result':
-                // Only show tool completion messages before text generation is complete
-                if (!prev.textGenerationComplete) {
-                  const resultMessage = chunk.data?.message || 'Tool completed'
-                  const resultName = chunk.data?.toolName || 'Tool'
+                // Handle the new payload structure for tool results
+                const payload = chunk.payload || chunk.data
+                const resultName = payload?.toolName || 'Tool'
+                
+                // Extract slide information if available
+                const slideData = payload?.result
+                if (slideData && slideData.slideNumber && slideData.textContent) {
+                  const slideInfo = `📄 Slide ${slideData.slideNumber}/${slideData.totalSlides}: Processing content`
                   return {
                     ...prev,
-                    content: prev.content + `✅ ${resultName}: ${resultMessage}\n\n`,
+                    content: prev.content + `${slideInfo}\n`,
                   }
+                } else {
+                  // Skip generic tool completion messages - just return prev without adding content
+                  return prev
                 }
-                return prev
 
               case 'text-start':
                 // Add a separator for when actual text generation starts
@@ -136,24 +165,30 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
                 }
 
               default:
-                console.log('Unknown chunk type:', chunk.type, chunk)
+                // Silently handle any other chunk types without logging
                 return prev
             }
           })
         } catch (error) {
           console.error('Error parsing stream chunk:', error)
+          console.error('Raw chunk data:', event.data)
         }
       }
 
       eventSource.onerror = (error) => {
-        console.error('EventSource error:', error)
+        // Since we close the connection on finish, any error here is likely genuine
+        console.error('EventSource connection error:', error)
+        
         setState(prev => ({
           ...prev,
           isProcessing: false,
           error: 'Connection error. Please try again.',
         }))
-        eventSource.close()
-        eventSourceRef.current = null
+        
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close()
+          eventSourceRef.current = null
+        }
       }
 
     } catch (error) {
