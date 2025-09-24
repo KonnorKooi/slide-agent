@@ -2,6 +2,8 @@
 
 An AI-powered presentation script generator that transforms Google Slides presentations into natural, flowing narration scripts. Built with modern TypeScript frameworks and real-time streaming capabilities.
 
+**Project Origin**: This project was inspired by an AI agents book I picked up after attending CascadiaJS 2026. The conference provided incredible insights into client-side AI, frontend/AI best practices, and the latest tools from the people building them. The welcoming Pacific Northwest dev community and their knowledge sharing motivated me to explore practical AI agent implementations using mastra. 
+
 ![alt text](image.png)
 
 ## How It Works

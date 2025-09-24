@@ -8,6 +8,7 @@ dist
 frontend/.env.local
 *.db
 *.db-*
+./.env
 
 # Google OAuth credentials and tokens
 credentials.json
