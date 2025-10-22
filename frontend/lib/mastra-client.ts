@@ -32,12 +32,36 @@ export interface SlideProcessRequest {
   threadId?: string
 }
 
+export interface SlideBlock {
+  slideNumber: number
+  title: string
+  script: string
+  isComplete: boolean
+  isStreaming?: boolean // Track if this slide is currently receiving text
+}
+
 export interface StreamChunk {
-  type: 'text-delta' | 'text-start' | 'text-end' | 'tool-call' | 'tool-call-delta' | 'tool-result' | 'start' | 'finish' | 'error'
+  type: 'text-delta' | 'text-start' | 'text-end' | 'tool-call' | 'tool-call-delta' | 'tool-result' | 'start' | 'finish' | 'error' | 'object' | 'slide' | 'slide-start' | 'slide-content' | 'slide-complete'
   runId?: string
   from?: string
   content?: string
   data?: any
+  slide?: {
+    slideNumber: number
+    title: string
+    script: string
+    isComplete: boolean
+  }
+  slideNumber?: number
+  slideTitle?: string
+  slideContent?: string // Partial script content
+  object?: {
+    slides?: Array<{
+      slideNumber: number
+      title: string
+      script: string
+    }>
+  }
   payload?: {
     content?: string
     message?: string
@@ -46,6 +70,7 @@ export interface StreamChunk {
     argsTextDelta?: string
     args?: any
     result?: any
+    text?: string
     [key: string]: any
   }
   error?: string

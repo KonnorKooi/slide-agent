@@ -15,9 +15,13 @@ const meta: Meta<typeof StreamingOutput> = {
   },
   tags: ['autodocs'],
   argTypes: {
-    content: {
-      control: 'text',
-      description: 'Text content to display',
+    slides: {
+      control: 'object',
+      description: 'Array of slide blocks to display',
+    },
+    toolStatus: {
+      control: 'object',
+      description: 'Array of tool status messages',
     },
     isStreaming: {
       control: 'boolean',
@@ -57,20 +61,42 @@ const meta: Meta<typeof StreamingOutput> = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-// Sample presentation script content
-const sampleContent = `Here's the complete presentation script formatted as requested:
+// Sample slide data
+const sampleSlides = [
+  {
+    slideNumber: 1,
+    title: "Welcome to Our Company",
+    script: "Welcome everyone to today's presentation about our company's journey and achievements. Over the next few minutes, we'll explore how we've grown from a small startup to a leading player in our industry. This story is not just about numbers and milestones, but about the people, innovations, and values that have shaped our path forward.",
+    isComplete: true
+  },
+  {
+    slideNumber: 2,
+    title: "Our Mission Statement",
+    script: "At the heart of everything we do lies our mission: to empower businesses through innovative technology solutions that drive growth and efficiency. This mission has been our north star since day one, guiding every decision we make and every product we develop. It's what gets us up in the morning and what drives us to continuously push the boundaries of what's possible.",
+    isComplete: true
+  },
+  {
+    slideNumber: 3,
+    title: "Key Achievements",
+    script: "Let me share some of our proudest achievements from the past year. We've successfully launched three major product updates, expanded our team by 150%, and most importantly, helped over 10,000 businesses transform their operations. These numbers represent real impact – real businesses that are now more efficient, more profitable, and better positioned for the future.",
+    isComplete: true
+  },
+  {
+    slideNumber: 4,
+    title: "Looking Forward",
+    script: "As we look toward the future, we're excited about the opportunities ahead. We're investing in new technologies, expanding into new markets, and continuing to build products that make a real difference. Thank you for joining us on this journey, and we look forward to sharing more exciting developments with you soon.",
+    isComplete: true
+  }
+]
 
-Slide 1 - "Welcome to Our Company"
-Welcome everyone to today's presentation about our company's journey and achievements. Over the next few minutes, we'll explore how we've grown from a small startup to a leading player in our industry. This story is not just about numbers and milestones, but about the people, innovations, and values that have shaped our path forward.
-
-Slide 2 - "Our Mission Statement"
-At the heart of everything we do lies our mission: to empower businesses through innovative technology solutions that drive growth and efficiency. This mission has been our north star since day one, guiding every decision we make and every product we develop. It's what gets us up in the morning and what drives us to continuously push the boundaries of what's possible.
-
-Slide 3 - "Key Achievements"
-Let me share some of our proudest achievements from the past year. We've successfully launched three major product updates, expanded our team by 150%, and most importantly, helped over 10,000 businesses transform their operations. These numbers represent real impact – real businesses that are now more efficient, more profitable, and better positioned for the future.
-
-Slide 4 - "Looking Forward"
-As we look toward the future, we're excited about the opportunities ahead. We're investing in new technologies, expanding into new markets, and continuing to build products that make a real difference. Thank you for joining us on this journey, and we look forward to sharing more exciting developments with you soon.`
+const sampleToolStatus = [
+  "🔧 Google Slides API: Accessing your presentation...",
+  "📄 Slide 1/4: Processing content",
+  "📄 Slide 2/4: Processing content",
+  "📄 Slide 3/4: Processing content",
+  "📄 Slide 4/4: Processing content",
+  "📝 Generating presentation script..."
+]
 
 // Container for stories to provide proper height
 const StoryContainer: React.FC<{ children: React.ReactNode; height?: string }> = ({
@@ -86,11 +112,12 @@ const StoryContainer: React.FC<{ children: React.ReactNode; height?: string }> =
 export const Empty: Story = {
   render: (args) => (
     <StoryContainer>
-      <StreamingOutput content="" isStreaming={false} {...args} />
+      <StreamingOutput {...args} />
     </StoryContainer>
   ),
   args: {
-    content: '',
+    slides: [],
+    toolStatus: [],
     isStreaming: false,
     error: null,
     placeholder: 'Your presentation script will appear here...',
@@ -101,11 +128,12 @@ export const Empty: Story = {
 export const WithContent: Story = {
   render: (args) => (
     <StoryContainer>
-      <StreamingOutput content="" isStreaming={false} {...args} />
+      <StreamingOutput {...args} />
     </StoryContainer>
   ),
   args: {
-    content: sampleContent,
+    slides: sampleSlides,
+    toolStatus: sampleToolStatus,
     isStreaming: false,
     error: null,
   },
@@ -115,11 +143,12 @@ export const WithContent: Story = {
 export const Streaming: Story = {
   render: (args) => (
     <StoryContainer>
-      <StreamingOutput content="" isStreaming={false} {...args} />
+      <StreamingOutput {...args} />
     </StoryContainer>
   ),
   args: {
-    content: sampleContent.slice(0, 200) + '...',
+    slides: sampleSlides.slice(0, 2),
+    toolStatus: sampleToolStatus.slice(0, 3),
     isStreaming: true,
     error: null,
   },
@@ -129,11 +158,12 @@ export const Streaming: Story = {
 export const WithError: Story = {
   render: (args) => (
     <StoryContainer>
-      <StreamingOutput content="" isStreaming={false} {...args} />
+      <StreamingOutput {...args} />
     </StoryContainer>
   ),
   args: {
-    content: '',
+    slides: [],
+    toolStatus: [],
     isStreaming: false,
     error: 'Failed to connect to the presentation. Please check the URL and try again.',
   },
@@ -143,11 +173,12 @@ export const WithError: Story = {
 export const NoControls: Story = {
   render: (args) => (
     <StoryContainer>
-      <StreamingOutput content="" isStreaming={false} {...args} />
+      <StreamingOutput {...args} />
     </StoryContainer>
   ),
   args: {
-    content: sampleContent,
+    slides: sampleSlides,
+    toolStatus: sampleToolStatus,
     isStreaming: false,
     showCopyButton: false,
     showClearButton: false,
@@ -157,32 +188,44 @@ export const NoControls: Story = {
 // Interactive streaming simulation
 export const StreamingSimulation: Story = {
   render: (args) => {
-    const [content, setContent] = useState('')
+    const [slides, setSlides] = useState<typeof sampleSlides>([])
+    const [toolStatus, setToolStatus] = useState<string[]>([])
     const [isStreaming, setIsStreaming] = useState(false)
-    const [isComplete, setIsComplete] = useState(false)
 
     const startStreaming = () => {
       if (isStreaming) return
 
-      setContent('')
+      setSlides([])
+      setToolStatus([])
       setIsStreaming(true)
-      setIsComplete(false)
 
-      const words = sampleContent.split(' ')
-      let currentIndex = 0
+      // Simulate tool status messages
+      const statuses = sampleToolStatus.slice()
+      let statusIndex = 0
 
-      const addWord = () => {
-        if (currentIndex < words.length) {
-          setContent(prev => prev + (currentIndex === 0 ? '' : ' ') + words[currentIndex])
-          currentIndex++
-          setTimeout(addWord, 50 + Math.random() * 100) // Vary the timing
+      const addStatus = () => {
+        if (statusIndex < statuses.length) {
+          setToolStatus(prev => [...prev, statuses[statusIndex]])
+          statusIndex++
+          setTimeout(addStatus, 500)
         } else {
-          setIsStreaming(false)
-          setIsComplete(true)
+          addSlides()
         }
       }
 
-      addWord()
+      // Simulate slides appearing one by one
+      let slideIndex = 0
+      const addSlides = () => {
+        if (slideIndex < sampleSlides.length) {
+          setSlides(prev => [...prev, sampleSlides[slideIndex]])
+          slideIndex++
+          setTimeout(addSlides, 1000)
+        } else {
+          setIsStreaming(false)
+        }
+      }
+
+      addStatus()
     }
 
     const stopStreaming = () => {
@@ -190,9 +233,9 @@ export const StreamingSimulation: Story = {
     }
 
     const clearContent = () => {
-      setContent('')
+      setSlides([])
+      setToolStatus([])
       setIsStreaming(false)
-      setIsComplete(false)
     }
 
     return (
@@ -246,7 +289,8 @@ export const StreamingSimulation: Story = {
 
         <div style={{ flex: 1, background: 'var(--bg-secondary)' }}>
           <StreamingOutput
-            content={content}
+            slides={slides}
+            toolStatus={toolStatus}
             isStreaming={isStreaming}
             error={null}
             onClear={clearContent}
@@ -262,11 +306,16 @@ export const StreamingSimulation: Story = {
 export const LargeContent: Story = {
   render: (args) => (
     <StoryContainer height="400px">
-      <StreamingOutput content="" isStreaming={false} {...args} />
+      <StreamingOutput {...args} />
     </StoryContainer>
   ),
   args: {
-    content: Array(50).fill(sampleContent).join('\n\n'),
+    slides: Array(20).fill(null).map((_, i) => ({
+      ...sampleSlides[i % 4],
+      slideNumber: i + 1,
+      isComplete: true
+    })),
+    toolStatus: sampleToolStatus,
     isStreaming: false,
     error: null,
   },

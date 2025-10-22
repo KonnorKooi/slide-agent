@@ -71,6 +71,209 @@ export async function GET(request: NextRequest) {
         controller.enqueue(encoder.encode(message))
       }
 
+      // Mathematical state machine for JSON streaming
+      // States represent our exact position in the JSON structure
+      type ParseState =
+        | { type: 'INIT' }
+        | { type: 'IN_SLIDES_ARRAY' }
+        | { type: 'IN_SLIDE_OBJECT', slideNum: number | null, title: string | null }
+        | { type: 'IN_STRING_VALUE', field: 'slideNumber' | 'title' | 'script', slideNum: number | null, title: string | null, buffer: string }
+        | { type: 'IN_NUMBER_VALUE', field: 'slideNumber', buffer: string }
+
+      let state: ParseState = { type: 'INIT' }
+      let charBuffer = '' // Buffer for pattern matching
+      let escapeNext = false
+      const slideScripts = new Map<number, string>() // Track sent script per slide
+
+      const processChar = (char: string) => {
+        charBuffer += char
+
+        // State: INIT - looking for "slides":[
+        if (state.type === 'INIT') {
+          if (charBuffer.includes('"slides"')) {
+            const afterSlides = charBuffer.substring(charBuffer.indexOf('"slides"') + 8)
+            if (afterSlides.includes('[')) {
+              state = { type: 'IN_SLIDES_ARRAY' }
+              charBuffer = ''
+              console.log('[State] → IN_SLIDES_ARRAY')
+            }
+          }
+          // Keep only last 20 chars to avoid memory issues
+          if (charBuffer.length > 20) charBuffer = charBuffer.substring(charBuffer.length - 20)
+          return
+        }
+
+        // State: IN_SLIDES_ARRAY - looking for {
+        if (state.type === 'IN_SLIDES_ARRAY') {
+          if (char === '{') {
+            state = { type: 'IN_SLIDE_OBJECT', slideNum: null, title: null }
+            charBuffer = ''
+            console.log('[State] → IN_SLIDE_OBJECT')
+          } else if (char === ']') {
+            state = { type: 'INIT' }
+            console.log('[State] → INIT (end of slides)')
+          }
+          return
+        }
+
+        // State: IN_SLIDE_OBJECT - looking for field names
+        if (state.type === 'IN_SLIDE_OBJECT') {
+          // Look for "slideNumber":
+          if (charBuffer.includes('"slideNumber"')) {
+            const afterField = charBuffer.substring(charBuffer.indexOf('"slideNumber"') + 13)
+            if (afterField.includes(':')) {
+              state = { type: 'IN_NUMBER_VALUE', field: 'slideNumber', buffer: '' }
+              charBuffer = ''
+              console.log('[State] → IN_NUMBER_VALUE (slideNumber)')
+              return
+            }
+          }
+
+          // Look for "title":"
+          if (charBuffer.includes('"title"')) {
+            const afterField = charBuffer.substring(charBuffer.indexOf('"title"') + 7)
+            if (afterField.includes(':') && afterField.includes('"')) {
+              state = {
+                type: 'IN_STRING_VALUE',
+                field: 'title',
+                slideNum: state.slideNum,
+                title: state.title,
+                buffer: ''
+              }
+              charBuffer = ''
+              console.log('[State] → IN_STRING_VALUE (title)')
+              return
+            }
+          }
+
+          // Look for "script":"
+          if (charBuffer.includes('"script"')) {
+            const afterField = charBuffer.substring(charBuffer.indexOf('"script"') + 8)
+            if (afterField.includes(':') && afterField.includes('"')) {
+              console.log(`[Debug] About to emit slide-start. slideNum=${state.slideNum}, title="${state.title}"`)
+
+              // Emit slide-start event now that we have slideNum and title
+              if (state.slideNum && state.title && !isNaN(state.slideNum)) {
+                if (!slideScripts.has(state.slideNum)) {
+                  slideScripts.set(state.slideNum, '')
+                  console.log(`[Event] slide-start: ${state.slideNum} - ${state.title}`)
+                  sendEvent('slide-start', {
+                    slideNumber: state.slideNum,
+                    slideTitle: state.title
+                  })
+                } else {
+                  console.log(`[Debug] Skipping slide-start for ${state.slideNum} - already sent`)
+                }
+              } else {
+                console.log(`[Error] Cannot emit slide-start - missing data: slideNum=${state.slideNum}, title="${state.title}"`)
+              }
+
+              state = {
+                type: 'IN_STRING_VALUE',
+                field: 'script',
+                slideNum: state.slideNum,
+                title: state.title,
+                buffer: ''
+              }
+              charBuffer = ''
+              console.log('[State] → IN_STRING_VALUE (script)')
+              return
+            }
+          }
+
+          // Look for end of slide object
+          if (char === '}') {
+            state = { type: 'IN_SLIDES_ARRAY' }
+            charBuffer = ''
+            console.log('[State] → IN_SLIDES_ARRAY (end of slide)')
+          }
+
+          // Keep buffer manageable
+          if (charBuffer.length > 30) charBuffer = charBuffer.substring(charBuffer.length - 30)
+          return
+        }
+
+        // State: IN_NUMBER_VALUE - reading slideNumber
+        if (state.type === 'IN_NUMBER_VALUE') {
+          if (char >= '0' && char <= '9') {
+            state.buffer += char
+          } else if ((char === ',' || char === '}' || char === '\n') && state.buffer.length > 0) {
+            // Number complete (only if we have digits)
+            const slideNum = parseInt(state.buffer)
+            console.log(`[Value] slideNumber = ${slideNum}`)
+            state = { type: 'IN_SLIDE_OBJECT', slideNum, title: null }
+            charBuffer = char
+          }
+          // Ignore spaces while waiting for digits
+          return
+        }
+
+        // State: IN_STRING_VALUE - reading title or script
+        if (state.type === 'IN_STRING_VALUE') {
+          // Handle escape sequences
+          if (escapeNext) {
+            state.buffer += char
+            escapeNext = false
+            return
+          }
+
+          if (char === '\\') {
+            state.buffer += char
+            escapeNext = true
+            return
+          }
+
+          // Check for closing quote
+          if (char === '"') {
+            // String complete
+            if (state.field === 'title') {
+              console.log(`[Value] title = "${state.buffer}"`)
+              state = {
+                type: 'IN_SLIDE_OBJECT',
+                slideNum: state.slideNum,
+                title: state.buffer
+              }
+              charBuffer = ''
+            } else if (state.field === 'script') {
+              console.log(`[Value] script complete (${state.buffer.length} chars)`)
+
+              // Send slide-complete event to mark this slide as done
+              if (state.slideNum) {
+                console.log(`[Event] slide-complete: ${state.slideNum}`)
+                sendEvent('slide-complete', {
+                  slideNumber: state.slideNum
+                })
+              }
+
+              state = {
+                type: 'IN_SLIDE_OBJECT',
+                slideNum: state.slideNum,
+                title: state.title
+              }
+              charBuffer = ''
+            }
+            return
+          }
+
+          // Accumulate character
+          state.buffer += char
+
+          // For script field, emit character immediately
+          if (state.field === 'script' && state.slideNum) {
+            sendEvent('slide-content', {
+              slideNumber: state.slideNum,
+              slideContent: char
+            })
+          }
+
+          return
+        }
+      }
+
+      // Buffer for accumulating text that might be JSON
+      let textBuffer = ''
+      let isAccumulatingJson = false
+
       try {
         // Send start event
         sendEvent('start', { presentationId, style })
@@ -128,17 +331,51 @@ export async function GET(request: NextRequest) {
 
               try {
                 const chunk = JSON.parse(dataStr)
-                
+
+                // Debug logging
+                if (chunk.type === 'object' || chunk.type === 'text-delta' || chunk.type === 'finish' || chunk.type === 'text-end' || chunk.type === 'text-start') {
+                  console.log('[API Route] Received chunk type:', chunk.type, 'payload:', JSON.stringify(chunk.payload || chunk.object || {}).substring(0, 200))
+                }
+
                 // Handle different chunk types from Mastra v5
                 switch (chunk.type) {
-                  case 'text-delta':
-                    sendEvent('text-delta', { content: chunk.payload?.text || '' })
+                  case 'object':
+                    // Forward structured output chunks with slide data
+                    sendEvent('object', {
+                      object: chunk.object || chunk.payload
+                    })
                     break
-                  
+
+                  case 'text-delta':
+                    const textContent = chunk.payload?.text || chunk.payload?.content || ''
+
+                    // Accumulate text to detect JSON
+                    textBuffer += textContent
+
+                    // Check if we're starting to accumulate JSON
+                    if (!isAccumulatingJson) {
+                      const trimmed = textBuffer.trim()
+                      if (trimmed.startsWith('```json') || trimmed.startsWith('```\n{') || trimmed.startsWith('{')) {
+                        isAccumulatingJson = true
+                        console.log('[API Route] Started streaming JSON parsing')
+                      }
+                    }
+
+                    // If we're accumulating JSON, process character by character
+                    if (isAccumulatingJson) {
+                      for (const char of textContent) {
+                        processChar(char)
+                      }
+                    } else {
+                      // Only send text-delta events if we're not accumulating JSON
+                      sendEvent('text-delta', { content: textContent })
+                    }
+                    break
+
                   case 'text-start':
                     sendEvent('text-start', { messageId: chunk.payload?.id })
                     break
-                  
+
                   case 'text-end':
                     sendEvent('text-end', { messageId: chunk.payload?.id })
                     break

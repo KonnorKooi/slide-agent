@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { cn, copyToClipboard, formatError } from '@/lib/utils'
+import type { SlideBlock } from '@/lib/mastra-client'
 
 export interface StreamingOutputProps {
-  content: string
+  slides: SlideBlock[]
+  toolStatus: string[]
   isStreaming: boolean
   error?: string | null
   onCopy?: () => void
@@ -17,7 +19,8 @@ export interface StreamingOutputProps {
 }
 
 export function StreamingOutput({
-  content,
+  slides,
+  toolStatus,
   isStreaming,
   error,
   onCopy,
@@ -31,6 +34,7 @@ export function StreamingOutput({
   const outputRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
   const [isNearBottom, setIsNearBottom] = useState(true)
+  const [showToolStatus, setShowToolStatus] = useState(true)
 
   // Auto-scroll to bottom when new content is added (throttled)
   useEffect(() => {
@@ -41,11 +45,11 @@ export function StreamingOutput({
           outputRef.current.scrollTop = outputRef.current.scrollHeight
         }
       }
-      
+
       const rafId = requestAnimationFrame(scrollToBottom)
       return () => cancelAnimationFrame(rafId)
     }
-  }, [content, autoScroll, isNearBottom])
+  }, [slides, toolStatus, autoScroll, isNearBottom])
 
   // Track if user is near the bottom of the scroll area
   const handleScroll = useCallback(() => {
@@ -57,23 +61,28 @@ export function StreamingOutput({
   }, [])
 
   const handleCopy = useCallback(async () => {
-    if (!content.trim()) return
+    if (slides.length === 0) return
 
     try {
-      await copyToClipboard(content)
+      // Format slides as readable text for copying
+      const formattedContent = slides
+        .map(slide => `Slide ${slide.slideNumber} - "${slide.title}"\n\n${slide.script}`)
+        .join('\n\n---\n\n')
+
+      await copyToClipboard(formattedContent)
       setCopied(true)
       onCopy?.()
       setTimeout(() => setCopied(false), 2000)
     } catch (err) {
       console.error('Failed to copy content:', err)
     }
-  }, [content, onCopy])
+  }, [slides, onCopy])
 
   const handleClear = useCallback(() => {
     onClear?.()
   }, [onClear])
 
-  const hasContent = content.trim().length > 0
+  const hasContent = slides.length > 0 || toolStatus.length > 0
   const showPlaceholder = !hasContent && !isStreaming && !error
 
   return (
@@ -189,34 +198,66 @@ export function StreamingOutput({
           </div>
         )}
 
-        {hasContent && (
-          <div className="output-text">
-            <pre style={{ 
-              margin: 0, 
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-              // Optimize rendering performance
-              transform: 'translateZ(0)', // Force GPU acceleration
-              // Prevent layout thrashing
-              contain: 'layout style paint',
-            }}>
-              {content}
-            </pre>
-            {isStreaming && (
-              <span 
-                className="cursor" 
-                aria-hidden="true"
+        {/* Tool Status Section */}
+        {toolStatus.length > 0 && (
+          <div className="tool-status-section">
+            <button
+              className="tool-status-toggle"
+              onClick={() => setShowToolStatus(!showToolStatus)}
+              aria-expanded={showToolStatus}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="none"
                 style={{
-                  display: 'inline-block',
-                  width: '2px',
-                  height: '1em',
-                  backgroundColor: 'var(--color-primary)',
-                  marginLeft: '2px',
-                  // Use a simpler, less aggressive animation
-                  animation: 'blink 1.5s ease-in-out infinite',
+                  transform: showToolStatus ? 'rotate(90deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.2s ease',
                 }}
               >
-              </span>
+                <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span>Processing Status ({toolStatus.length} updates)</span>
+            </button>
+            {showToolStatus && (
+              <div className="tool-status-content">
+                {toolStatus.map((status, index) => (
+                  <div key={index} className="tool-status-item">
+                    {status}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Slides Section */}
+        {slides.length > 0 && (
+          <div className="slides-container">
+            {slides.map((slide) => (
+              <div key={slide.slideNumber} className={`slide-block ${slide.isStreaming ? 'streaming' : ''}`}>
+                <div className="slide-header">
+                  <span className="slide-number">Slide {slide.slideNumber}</span>
+                  <h3 className="slide-title">{slide.title}</h3>
+                  {slide.isStreaming && (
+                    <span className="streaming-badge">
+                      <span className="streaming-dot"></span>
+                      Generating...
+                    </span>
+                  )}
+                </div>
+                <div className="slide-script">
+                  {slide.script}
+                  {slide.isStreaming && <span className="cursor-blink">|</span>}
+                </div>
+              </div>
+            ))}
+            {isStreaming && (
+              <div className="streaming-indicator-inline">
+                <span className="streaming-dot"></span>
+                Generating slides...
+              </div>
             )}
           </div>
         )}
@@ -364,25 +405,130 @@ const styles = `
   font-size: 0.875rem;
 }
 
-.output-text {
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  color: var(--text-primary);
+/* Tool Status Section */
+.tool-status-section {
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--border-primary);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background-color: var(--bg-secondary);
 }
 
-.output-text pre {
-  margin: 0;
-  font-family: inherit;
-  white-space: pre-wrap;
-  word-wrap: break-word;
+.tool-status-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-align: left;
+  transition: background-color 0.2s;
 }
 
-.streaming-text .cursor {
-  display: inline-block;
+.tool-status-toggle:hover {
+  background-color: var(--bg-primary);
+}
+
+.tool-status-content {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border-primary);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.8125rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tool-status-item {
+  padding: 0.375rem 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* Slides Container */
+.slides-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.slide-block {
+  border: 1px solid var(--border-primary);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  background-color: var(--bg-secondary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.slide-block:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: var(--color-primary);
+}
+
+.slide-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid var(--border-primary);
+}
+
+.slide-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 4rem;
+  padding: 0.375rem 0.75rem;
   background-color: var(--color-primary);
-  width: 2px;
-  margin-left: 2px;
-  animation: blink 1s infinite;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 0.375rem;
+  letter-spacing: 0.025em;
+}
+
+.slide-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.slide-script {
+  color: var(--text-primary);
+  line-height: 1.7;
+  font-size: 0.9375rem;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.streaming-indicator-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-style: italic;
 }
 
 @keyframes blink {
@@ -412,6 +558,59 @@ const styles = `
 .scroll-to-bottom:hover {
   background-color: var(--color-primary-dark);
   transform: translateY(-1px);
+}
+
+/* Streaming indicators */
+.streaming-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  background-color: var(--color-primary);
+  color: white;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-left: auto;
+}
+
+.streaming-dot {
+  width: 6px;
+  height: 6px;
+  background-color: currentColor;
+  border-radius: 50%;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.cursor-blink {
+  display: inline-block;
+  margin-left: 2px;
+  font-weight: 400;
+  animation: blink 1s step-end infinite;
+  color: var(--color-primary);
+}
+
+@keyframes blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
+.slide-block.streaming {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
 }
 `
 

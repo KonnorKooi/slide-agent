@@ -6,7 +6,7 @@ import { StreamingOutput } from './StreamingOutput'
 import { SubmitButton } from './SubmitButton'
 import { ThemeToggle } from './ThemeToggle'
 import { PresentationStyleSelector, type PresentationStyle } from './PresentationStyleSelector'
-import { validateSlideInput, type StreamChunk } from '@/lib/mastra-client'
+import { validateSlideInput, type StreamChunk, type SlideBlock } from '@/lib/mastra-client'
 import { cn, formatError } from '@/lib/utils'
 
 export interface SlideProcessorProps {
@@ -15,7 +15,8 @@ export interface SlideProcessorProps {
 
 interface ProcessingState {
   isProcessing: boolean
-  content: string
+  toolStatus: string[]
+  slides: SlideBlock[]
   error: string | null
   presentationId: string | null
   textGenerationComplete: boolean
@@ -29,7 +30,8 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
   const [presentationStyle, setPresentationStyle] = useState<PresentationStyle>('explanatory')
   const [state, setState] = useState<ProcessingState>({
     isProcessing: false,
-    content: '',
+    toolStatus: [],
+    slides: [],
     error: null,
     presentationId: null,
     textGenerationComplete: false,
@@ -62,7 +64,8 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
     // Clear previous state
     setState({
       isProcessing: true,
-      content: '',
+      toolStatus: [],
+      slides: [],
       error: null,
       presentationId,
       textGenerationComplete: false,
@@ -86,13 +89,120 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
 
           setState(prev => {
             switch (chunk.type) {
-              case 'text-delta':
-                // Handle both old format (chunk.content) and new format (chunk.payload.content)
-                const deltaContent = chunk.content || chunk.payload?.content || ''
-                return {
-                  ...prev,
-                  content: prev.content + deltaContent,
+              case 'slide-start':
+                // A new slide is starting - create the slide block with empty script
+                if (chunk.slideNumber && chunk.slideTitle) {
+                  const updatedSlides = [...prev.slides]
+                  const existingIndex = updatedSlides.findIndex(s => s.slideNumber === chunk.slideNumber)
+
+                  const newSlide: SlideBlock = {
+                    slideNumber: chunk.slideNumber,
+                    title: chunk.slideTitle,
+                    script: '', // Start with empty script
+                    isComplete: false,
+                    isStreaming: true
+                  }
+
+                  if (existingIndex >= 0) {
+                    updatedSlides[existingIndex] = newSlide
+                  } else {
+                    updatedSlides.push(newSlide)
+                    updatedSlides.sort((a, b) => a.slideNumber - b.slideNumber)
+                  }
+
+                  console.log(`[Frontend] Started slide ${chunk.slideNumber}: ${chunk.slideTitle}`)
+
+                  return {
+                    ...prev,
+                    slides: updatedSlides,
+                  }
                 }
+                return prev
+
+              case 'slide-content':
+                // Append content to the slide's script character by character
+                if (chunk.slideNumber && chunk.slideContent) {
+                  const updatedSlides = [...prev.slides]
+                  const slideIndex = updatedSlides.findIndex(s => s.slideNumber === chunk.slideNumber)
+
+                  if (slideIndex >= 0) {
+                    updatedSlides[slideIndex] = {
+                      ...updatedSlides[slideIndex],
+                      script: updatedSlides[slideIndex].script + chunk.slideContent,
+                      isStreaming: true // Keep streaming flag while receiving content
+                    }
+                  }
+
+                  return {
+                    ...prev,
+                    slides: updatedSlides,
+                  }
+                }
+                return prev
+
+              case 'slide-complete':
+                // Mark slide as complete - stop showing "Generating..." badge
+                if (chunk.slideNumber) {
+                  const updatedSlides = [...prev.slides]
+                  const slideIndex = updatedSlides.findIndex(s => s.slideNumber === chunk.slideNumber)
+
+                  if (slideIndex >= 0) {
+                    updatedSlides[slideIndex] = {
+                      ...updatedSlides[slideIndex],
+                      isStreaming: false,
+                      isComplete: true
+                    }
+                  }
+
+                  console.log(`[Frontend] Completed slide ${chunk.slideNumber}`)
+
+                  return {
+                    ...prev,
+                    slides: updatedSlides,
+                  }
+                }
+                return prev
+
+              case 'slide':
+                // Handle individual slide chunks (complete slide - fallback)
+                if (chunk.slide) {
+                  const updatedSlides = [...prev.slides]
+                  const existingIndex = updatedSlides.findIndex(s => s.slideNumber === chunk.slide!.slideNumber)
+
+                  if (existingIndex >= 0) {
+                    updatedSlides[existingIndex] = chunk.slide
+                  } else {
+                    updatedSlides.push(chunk.slide)
+                    updatedSlides.sort((a, b) => a.slideNumber - b.slideNumber)
+                  }
+
+                  console.log(`[Frontend] Received complete slide ${chunk.slide.slideNumber}: ${chunk.slide.title}`)
+
+                  return {
+                    ...prev,
+                    slides: updatedSlides,
+                  }
+                }
+                return prev
+
+              case 'object':
+                // Handle structured output with all slides at once (fallback)
+                if (chunk.object?.slides) {
+                  const newSlides = chunk.object.slides.map(slide => ({
+                    ...slide,
+                    isComplete: true
+                  }))
+                  return {
+                    ...prev,
+                    slides: newSlides,
+                  }
+                }
+                return prev
+
+              case 'text-delta':
+                // This might contain partial JSON during streaming
+                // We'll handle complete objects via 'slide' or 'object' chunks
+                return prev
 
               case 'start':
                 return prev // Already handled in state initialization
@@ -124,43 +234,44 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
                 const toolName = toolData?.toolName || toolData?.args?.toolName || 'Unknown tool'
                 return {
                   ...prev,
-                  content: prev.content + `\n🔧 ${toolName}: ${toolMessage}\n`,
+                  toolStatus: [...prev.toolStatus, `🔧 ${toolName}: ${toolMessage}`],
                 }
 
               case 'tool-call-delta':
                 // Handle streaming tool call arguments - just show progress
                 const toolCallData = chunk.payload
                 const toolCallName = toolCallData?.toolName || 'Tool'
-                return {
-                  ...prev,
-                  content: prev.content.endsWith(`🔧 ${toolCallName}: Building call...\n`) 
-                    ? prev.content 
-                    : prev.content + `🔧 ${toolCallName}: Building call...\n`,
+                const buildingMessage = `🔧 ${toolCallName}: Building call...`
+
+                // Only add if not already the last status message
+                if (prev.toolStatus[prev.toolStatus.length - 1] !== buildingMessage) {
+                  return {
+                    ...prev,
+                    toolStatus: [...prev.toolStatus, buildingMessage],
+                  }
                 }
+                return prev
 
               case 'tool-result':
                 // Handle the new payload structure for tool results
                 const payload = chunk.payload || chunk.data
-                const resultName = payload?.toolName || 'Tool'
-                
+
                 // Extract slide information if available
                 const slideData = payload?.result
                 if (slideData && slideData.slideNumber && slideData.textContent) {
                   const slideInfo = `📄 Slide ${slideData.slideNumber}/${slideData.totalSlides}: Processing content`
                   return {
                     ...prev,
-                    content: prev.content + `${slideInfo}\n`,
+                    toolStatus: [...prev.toolStatus, slideInfo],
                   }
-                } else {
-                  // Skip generic tool completion messages - just return prev without adding content
-                  return prev
                 }
+                return prev
 
               case 'text-start':
                 // Add a separator for when actual text generation starts
                 return {
                   ...prev,
-                  content: prev.content + '📝 Generating presentation script:\n\n',
+                  toolStatus: [...prev.toolStatus, '📝 Generating presentation script...'],
                 }
 
               case 'text-end':
@@ -222,7 +333,8 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
   const handleClear = useCallback(() => {
     setState(prev => ({
       ...prev,
-      content: '',
+      toolStatus: [],
+      slides: [],
       error: null,
       textGenerationComplete: false,
     }))
@@ -322,7 +434,8 @@ export function SlideProcessor({ className }: SlideProcessorProps) {
           {/* Output Section */}
           <section className="output-section">
             <StreamingOutput
-              content={state.content}
+              slides={state.slides}
+              toolStatus={state.toolStatus}
               isStreaming={state.isProcessing}
               error={state.error}
               onCopy={handleCopy}
