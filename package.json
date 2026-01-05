@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "mastra dev --dir mastra",
+    "dev:mastra": "mastra dev --dir mastra",
+    "dev:api": "tsx api-server.js",
+    "dev": "echo 'Run \"npm run dev:mastra\" and \"npm run dev:api\" in separate terminals'",
     "build": "mastra build --dir mastra",
     "start": "mastra start --dir mastra"
   },
@@ -19,15 +21,20 @@
   "dependencies": {
     "@ai-sdk/openai": "^2.0.32",
     "@google-cloud/local-auth": "^3.0.1",
-    "@mastra/core": "^0.17.1",
+    "@mastra/core": "^0.24.9",
     "@mastra/libsql": "^0.14.2",
-    "@mastra/memory": "^0.15.2",
+    "@mastra/memory": "^0.15.13",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "firebase-admin": "^13.6.0",
     "googleapis": "^160.0.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
-    "mastra": "^0.13.1",
+    "baseline-browser-mapping": "^2.8.32",
+    "mastra": "^0.18.9",
+    "tsx": "^4.7.0",
     "typescript": "^5.9.2"
   }
 }
