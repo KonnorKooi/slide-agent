@@ -11,7 +11,6 @@ let currentUserId: string | null = null;
 
 export function setUserId(userId: string) {
   currentUserId = userId;
-  console.log('[UserContext] userId set:', userId);
 }
 
 export function getUserId(): string {
@@ -22,6 +21,5 @@ export function getUserId(): string {
 }
 
 export function clearUserId() {
-  console.log('[UserContext] userId cleared');
   currentUserId = null;
 }

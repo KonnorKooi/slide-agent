@@ -25,19 +25,20 @@ export const getSlideCount = createTool({
     }).optional(),
   }),
   execute: async (inputData, context) => {
-    const { presentationId, includeMetadata } = inputData;
+    // Extract parameters from inputData.context (Mastra v1 beta structure)
+    const { presentationId, includeMetadata } = inputData.context || inputData;
 
     // Get userId from global context set by custom endpoint
     const userId = getUserId();
 
-    console.log(`[getSlideCount] Starting - presentationId: ${presentationId}, userId: ${userId}`);
+    if (!presentationId) {
+      throw new Error('Missing required parameters: presentationId');
+    }
 
     // Helper function to fetch presentation metadata
     const fetchPresentationData = async () => {
-      console.log(`[getSlideCount] Getting slides client for user ${userId}...`);
       const slides = await getSlidesClient(userId);
 
-      console.log(`[getSlideCount] Fetching presentation metadata...`);
       const presentationResponse = await slides.presentations.get({
         presentationId: presentationId,
       });
@@ -74,58 +75,34 @@ export const getSlideCount = createTool({
     };
 
     try {
-      const result = await fetchPresentationData();
-      console.log(`[getSlideCount] Successfully retrieved count: ${result.slideCount} slides`);
-      return result;
-
+      return await fetchPresentationData();
     } catch (error) {
-      console.error('[getSlideCount] Error occurred:', error);
-
       if (error instanceof Error) {
         // Handle token expiration - retry with fresh token
         if (error.message.includes('401') || error.message.includes('invalid_grant')) {
-          console.log('[getSlideCount] Token expired, retrying with fresh token...');
-
           try {
-            // Call getSlidesClient again - it fetches a fresh token from backend
-            const result = await fetchPresentationData();
-            console.log(`[getSlideCount] Successfully retrieved count after token refresh: ${result.slideCount} slides`);
-            return result;
+            return await fetchPresentationData();
           } catch (retryError) {
-            const errorMsg = `Authentication failed after retry: ${retryError instanceof Error ? retryError.message : String(retryError)}`;
-            console.error(`[getSlideCount] ${errorMsg}`);
-            throw new Error(errorMsg);
+            throw new Error(`Authentication failed after retry: ${retryError instanceof Error ? retryError.message : String(retryError)}`);
           }
         }
 
         // Handle specific Google API errors
         if (error.message.includes('404')) {
-          const errorMsg = `Presentation not found with ID: ${presentationId}. Make sure the ID is correct and the presentation is accessible.`;
-          console.error(`[getSlideCount] ${errorMsg}`);
-          throw new Error(errorMsg);
+          throw new Error(`Presentation not found with ID: ${presentationId}. Make sure the ID is correct and the presentation is accessible.`);
         }
         if (error.message.includes('403')) {
-          const errorMsg = `Access denied to presentation ${presentationId}. Make sure you have permission to view this presentation.`;
-          console.error(`[getSlideCount] ${errorMsg}`);
-          throw new Error(errorMsg);
+          throw new Error(`Access denied to presentation ${presentationId}. Make sure you have permission to view this presentation.`);
         }
 
-        // Re-throw user-friendly errors
         if (error.message.includes('Could not retrieve presentation data')) {
-          console.error(`[getSlideCount] Re-throwing user-friendly error: ${error.message}`);
           throw error;
         }
 
-        // For any other error, provide the actual error message
-        const errorMsg = `Failed to get slide count: ${error.message}`;
-        console.error(`[getSlideCount] ${errorMsg}`);
-        throw new Error(errorMsg);
+        throw new Error(`Failed to get slide count: ${error.message}`);
       }
 
-      // If it's not an Error instance, still provide details
-      const errorMsg = `Failed to get slide count: ${String(error)}`;
-      console.error(`[getSlideCount] ${errorMsg}`);
-      throw new Error(errorMsg);
+      throw new Error(`Failed to get slide count: ${String(error)}`);
     }
   },
 });

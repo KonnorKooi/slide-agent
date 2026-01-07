@@ -59,7 +59,7 @@ export const SlideAgent = new Agent({
 - Focus on making natural, flowing presentation scripts
 
 The presentation ID is the long string found in Google Slides URLs between '/d/' and '/edit'.`,
-    model: openai("gpt-4o-mini"),  // Using gpt-4o-mini for higher rate limits and lower cost
+    model: openai("gpt-4.1-mini"),  // 1M context window for large presentations
     tools: { getSlideCount, getSlide },
     // NOTE: Removed structured output - JSON is parsed manually by state machine in streaming API
 });

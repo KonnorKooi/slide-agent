@@ -65,25 +65,21 @@ export const getSlide = createTool({
     imageUrls: z.array(z.string()).optional(),
   }),
   execute: async (inputData, context) => {
-    const { presentationId, slideIndex, includeContent } = inputData;
+    // Extract parameters from inputData.context (Mastra v1 beta structure)
+    const { presentationId, slideIndex, includeContent } = inputData.context || inputData;
 
     // Get userId from global context set by custom endpoint
     const userId = getUserId();
 
-    console.log(`[getSlide] Starting - presentationId: ${presentationId}, slideIndex: ${slideIndex}, userId: ${userId}`);
-
     // Helper function to fetch and process slide data
     const fetchSlideData = async () => {
-      console.log(`[getSlide] Getting slides client for user ${userId}...`);
       const slides = await getSlidesClient(userId);
 
-      console.log(`[getSlide] Fetching presentation...`);
       const presentationResponse = await slides.presentations.get({
         presentationId: presentationId,
       });
 
       const presentation = presentationResponse.data;
-      console.log(`[getSlide] Presentation fetched, title: ${presentation.title}`);
 
       if (!presentation.slides || presentation.slides.length === 0) {
         throw new Error("No slides found in the presentation");
@@ -100,8 +96,6 @@ export const getSlide = createTool({
       if (!slide) {
         throw new Error(`Could not retrieve slide at index ${slideIndex}`);
       }
-
-      console.log(`[getSlide] Processing slide ${slideIndex + 1}/${presentation.slides.length}`);
 
       // Extract text content if requested
       let textContent: string | undefined;
@@ -143,58 +137,35 @@ export const getSlide = createTool({
     };
 
     try {
-      const result = await fetchSlideData();
-      console.log(`[getSlide] Successfully processed slide ${slideIndex + 1}`);
-      return result;
-
+      return await fetchSlideData();
     } catch (error) {
-      console.error('[getSlide] Error occurred:', error);
-
       if (error instanceof Error) {
         // Handle token expiration - retry with fresh token
         if (error.message.includes('401') || error.message.includes('invalid_grant')) {
-          console.log('[getSlide] Token expired, retrying with fresh token...');
-
           try {
-            // Call getSlidesClient again - it fetches a fresh token from backend
-            const result = await fetchSlideData();
-            console.log(`[getSlide] Successfully processed slide ${slideIndex + 1} after token refresh`);
-            return result;
+            return await fetchSlideData();
           } catch (retryError) {
-            const errorMsg = `Authentication failed after retry: ${retryError instanceof Error ? retryError.message : String(retryError)}`;
-            console.error(`[getSlide] ${errorMsg}`);
-            throw new Error(errorMsg);
+            throw new Error(`Authentication failed after retry: ${retryError instanceof Error ? retryError.message : String(retryError)}`);
           }
         }
 
         // Handle specific Google API errors
         if (error.message.includes('404')) {
-          const errorMsg = `Presentation not found with ID: ${presentationId}. Make sure the ID is correct and the presentation is accessible.`;
-          console.error(`[getSlide] ${errorMsg}`);
-          throw new Error(errorMsg);
+          throw new Error(`Presentation not found with ID: ${presentationId}. Make sure the ID is correct and the presentation is accessible.`);
         }
         if (error.message.includes('403')) {
-          const errorMsg = `Access denied to presentation ${presentationId}. Make sure you have permission to view this presentation.`;
-          console.error(`[getSlide] ${errorMsg}`);
-          throw new Error(errorMsg);
+          throw new Error(`Access denied to presentation ${presentationId}. Make sure you have permission to view this presentation.`);
         }
 
         // Re-throw the original error if it's already user-friendly
         if (error.message.includes('out of range') || error.message.includes('No slides found')) {
-          console.error(`[getSlide] Re-throwing user-friendly error: ${error.message}`);
           throw error;
         }
 
-        // For any other error, provide the actual error message
-        const errorMsg = `Failed to retrieve slide: ${error.message}`;
-        console.error(`[getSlide] ${errorMsg}`);
-        throw new Error(errorMsg);
+        throw new Error(`Failed to retrieve slide: ${error.message}`);
       }
 
-      // If it's not an Error instance, still provide details
-      const errorMsg = `Failed to retrieve slide: ${String(error)}`;
-      console.error(`[getSlide] ${errorMsg}`);
-      throw new Error(errorMsg);
+      throw new Error(`Failed to retrieve slide: ${String(error)}`);
     }
   },
 });

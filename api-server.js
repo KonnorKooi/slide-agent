@@ -5,6 +5,10 @@
  * allowing the frontend to call the agent via REST API.
  */
 
+// Load environment variables FIRST
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import { SlideAgent } from './mastra/agents/agent.ts';
@@ -29,8 +33,6 @@ app.get('/health', (req, res) => {
  * Returns Server-Sent Events stream
  */
 app.post('/api/stream-with-user', async (req, res) => {
-  console.log('[API] Received request to /api/stream-with-user');
-
   try {
     const { messages, memory, userId } = req.body;
 
@@ -40,19 +42,12 @@ app.post('/api/stream-with-user', async (req, res) => {
       return res.status(400).json({ error: 'Missing userId in request body' });
     }
 
-    console.log(`[API] Processing request for userId: ${userId}`);
-
     // Set userId globally for this request
     setUserId(userId);
 
     try {
-      console.log('[API] Calling SlideAgent.stream()');
-
       // Call Mastra agent with correct signature: stream(messages, options)
-      // First argument is messages, second is options
       const stream = await SlideAgent.stream(messages);
-
-      console.log('[API] Stream created successfully, sending to client');
 
       // Set SSE headers
       res.setHeader('Content-Type', 'text/event-stream');
@@ -61,23 +56,17 @@ app.post('/api/stream-with-user', async (req, res) => {
       res.setHeader('Access-Control-Allow-Origin', '*');
 
       // Mastra returns a MastraModelOutput with textStream property
-      // We need to iterate over it and convert to SSE format
       try {
-        // Stream is a MastraModelOutput, use textStream to iterate
         for await (const chunk of stream.textStream) {
-          // Send each chunk as SSE
           const sseData = `data: ${JSON.stringify({ type: 'text-delta', payload: { text: chunk } })}\n\n`;
           res.write(sseData);
         }
 
         // Send completion event
         res.write(`data: ${JSON.stringify({ type: 'finish' })}\n\n`);
-        console.log('[API] Stream completed');
       } finally {
-        // Clean up userId after stream completes
         clearUserId();
         res.end();
-        console.log('[API] Response ended, userId cleared');
       }
 
     } catch (streamError) {

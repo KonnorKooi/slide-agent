@@ -3,18 +3,24 @@
  * from Firebase backend and creating authenticated Google Slides clients
  */
 
+import { google } from 'googleapis';
+
 /**
  * Fetch fresh Google OAuth access token for user from Firebase backend
  */
 export async function fetchUserAccessToken(userId: string): Promise<string> {
   const functionsUrl = process.env.FIREBASE_FUNCTIONS_URL || 'http://localhost:5001/verbaslide/us-central1';
+  const serverApiKey = process.env.SERVER_API_KEY || 'dev-server-key-change-in-production';
 
   try {
     const response = await fetch(`${functionsUrl}/refreshOAuthToken`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        data: { userId }
+        data: {
+          userId,
+          serverApiKey  // Add server API key for authentication
+        }
       })
     });
 
@@ -29,10 +35,8 @@ export async function fetchUserAccessToken(userId: string): Promise<string> {
       throw new Error(result.result?.error || 'Token refresh failed');
     }
 
-    console.log('[Backend Auth] Successfully fetched access token for user:', userId);
     return result.result.accessToken;
   } catch (error: any) {
-    console.error('[Backend Auth] Error fetching access token:', error);
     throw new Error(`Authentication failed: ${error.message}`);
   }
 }
@@ -41,8 +45,6 @@ export async function fetchUserAccessToken(userId: string): Promise<string> {
  * Create Google OAuth2 client with user's access token
  */
 export function createOAuth2Client(accessToken: string) {
-  const { google } = require('googleapis');
-
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
@@ -58,8 +60,6 @@ export function createOAuth2Client(accessToken: string) {
  * Get authenticated Google Slides client using user's token from backend
  */
 export async function getSlidesClientWithUserId(userId: string) {
-  const { google } = require('googleapis');
-
   // Fetch fresh access token from backend
   const accessToken = await fetchUserAccessToken(userId);
 
