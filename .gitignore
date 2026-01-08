@@ -10,7 +10,8 @@ frontend/.env.local
 *.db-*
 ./.env
 
-# Google OAuth credentials and tokens
+# Google OAuth credentials and tokens (DEPRECATED - no longer used)
+# System now uses backend OAuth tokens via Firebase
 credentials.json
 token.json
 

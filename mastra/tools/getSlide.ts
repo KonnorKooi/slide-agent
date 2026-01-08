@@ -1,6 +1,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { getSlidesClient, hasCredentials } from "./googleAuth";
+import { getUserId } from "../../lib/user-context";
+import { getSlidesClient } from "./googleAuth";
 
 // Schema for slide element (simplified version of Google Slides API response)
 const slideElementSchema = z.object({
@@ -63,30 +64,22 @@ export const getSlide = createTool({
     textContent: z.string().optional(),
     imageUrls: z.array(z.string()).optional(),
   }),
-  execute: async ({ context }) => {
-    const { presentationId, slideIndex, includeContent } = context;
+  execute: async (inputData, context) => {
+    // Extract parameters from inputData.context (Mastra v1 beta structure)
+    const { presentationId, slideIndex, includeContent } = inputData.context || inputData;
 
-    console.log(`[getSlide] Starting - presentationId: ${presentationId}, slideIndex: ${slideIndex}`);
+    // Get userId from global context set by custom endpoint
+    const userId = getUserId();
 
-    // Check if credentials are available
-    if (!(await hasCredentials())) {
-      const error = "Google credentials not found. Please place your OAuth 2.0 credentials file as 'credentials.json' in the project root.";
-      console.error(`[getSlide] ${error}`);
-      throw new Error(error);
-    }
+    // Helper function to fetch and process slide data
+    const fetchSlideData = async () => {
+      const slides = await getSlidesClient(userId);
 
-    try {
-      console.log(`[getSlide] Getting slides client...`);
-      const slides = await getSlidesClient();
-
-      console.log(`[getSlide] Fetching presentation...`);
-      // Get the presentation to access slides
       const presentationResponse = await slides.presentations.get({
         presentationId: presentationId,
       });
 
       const presentation = presentationResponse.data;
-      console.log(`[getSlide] Presentation fetched, title: ${presentation.title}`);
 
       if (!presentation.slides || presentation.slides.length === 0) {
         throw new Error("No slides found in the presentation");
@@ -103,8 +96,6 @@ export const getSlide = createTool({
       if (!slide) {
         throw new Error(`Could not retrieve slide at index ${slideIndex}`);
       }
-
-      console.log(`[getSlide] Processing slide ${slideIndex + 1}/${presentation.slides.length}`);
 
       // Extract text content if requested
       let textContent: string | undefined;
@@ -135,55 +126,46 @@ export const getSlide = createTool({
         textContent = textParts.join(' ').trim();
       }
 
-      const result = {
+      return {
         slide: slide as z.infer<typeof slideSchema>,
-        slideNumber: slideIndex + 1, // Human-readable slide number (1-based)
+        slideNumber: slideIndex + 1,
         totalSlides: presentation.slides.length,
         presentationTitle: presentation.title || undefined,
         textContent: textContent || undefined,
         imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
       };
+    };
 
-      console.log(`[getSlide] Successfully processed slide ${slideIndex + 1}`);
-      return result;
-
+    try {
+      return await fetchSlideData();
     } catch (error) {
-      console.error('[getSlide] Error occurred:', error);
-      
       if (error instanceof Error) {
+        // Handle token expiration - retry with fresh token
+        if (error.message.includes('401') || error.message.includes('invalid_grant')) {
+          try {
+            return await fetchSlideData();
+          } catch (retryError) {
+            throw new Error(`Authentication failed after retry: ${retryError instanceof Error ? retryError.message : String(retryError)}`);
+          }
+        }
+
         // Handle specific Google API errors
         if (error.message.includes('404')) {
-          const errorMsg = `Presentation not found with ID: ${presentationId}. Make sure the ID is correct and the presentation is accessible.`;
-          console.error(`[getSlide] ${errorMsg}`);
-          throw new Error(errorMsg);
+          throw new Error(`Presentation not found with ID: ${presentationId}. Make sure the ID is correct and the presentation is accessible.`);
         }
         if (error.message.includes('403')) {
-          const errorMsg = `Access denied to presentation ${presentationId}. Make sure you have permission to view this presentation.`;
-          console.error(`[getSlide] ${errorMsg}`);
-          throw new Error(errorMsg);
-        }
-        if (error.message.includes('401')) {
-          const errorMsg = `Authentication failed. Please re-authenticate with Google or check your credentials.`;
-          console.error(`[getSlide] ${errorMsg}`);
-          throw new Error(errorMsg);
+          throw new Error(`Access denied to presentation ${presentationId}. Make sure you have permission to view this presentation.`);
         }
 
         // Re-throw the original error if it's already user-friendly
-        if (error.message.includes('out of range') || error.message.includes('credentials not found')) {
-          console.error(`[getSlide] Re-throwing user-friendly error: ${error.message}`);
+        if (error.message.includes('out of range') || error.message.includes('No slides found')) {
           throw error;
         }
-        
-        // For any other error, provide the actual error message
-        const errorMsg = `Failed to retrieve slide: ${error.message}`;
-        console.error(`[getSlide] ${errorMsg}`);
-        throw new Error(errorMsg);
+
+        throw new Error(`Failed to retrieve slide: ${error.message}`);
       }
 
-      // If it's not an Error instance, still provide details
-      const errorMsg = `Failed to retrieve slide: ${String(error)}`;
-      console.error(`[getSlide] ${errorMsg}`);
-      throw new Error(errorMsg);
+      throw new Error(`Failed to retrieve slide: ${String(error)}`);
     }
   },
 });

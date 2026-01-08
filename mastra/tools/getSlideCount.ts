@@ -1,6 +1,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { getSlidesClient, hasCredentials } from "./googleAuth";
+import { getUserId } from "../../lib/user-context";
+import { getSlidesClient } from "./googleAuth";
 
 export const getSlideCount = createTool({
   id: "get-slide-count",
@@ -23,24 +24,21 @@ export const getSlideCount = createTool({
       revisionId: z.string().optional(),
     }).optional(),
   }),
-  execute: async ({ context }) => {
-    const { presentationId, includeMetadata } = context;
+  execute: async (inputData, context) => {
+    // Extract parameters from inputData.context (Mastra v1 beta structure)
+    const { presentationId, includeMetadata } = inputData.context || inputData;
 
-    console.log(`[getSlideCount] Starting - presentationId: ${presentationId}`);
+    // Get userId from global context set by custom endpoint
+    const userId = getUserId();
 
-    // Check if credentials are available
-    if (!(await hasCredentials())) {
-      const error = "Google credentials not found. Please place your OAuth 2.0 credentials file as 'credentials.json' in the project root.";
-      console.error(`[getSlideCount] ${error}`);
-      throw new Error(error);
+    if (!presentationId) {
+      throw new Error('Missing required parameters: presentationId');
     }
 
-    try {
-      console.log(`[getSlideCount] Getting slides client...`);
-      const slides = await getSlidesClient();
+    // Helper function to fetch presentation metadata
+    const fetchPresentationData = async () => {
+      const slides = await getSlidesClient(userId);
 
-      console.log(`[getSlideCount] Fetching presentation metadata...`);
-      // Get the presentation metadata (includes slide count)
       const presentationResponse = await slides.presentations.get({
         presentationId: presentationId,
       });
@@ -74,11 +72,21 @@ export const getSlideCount = createTool({
       }
 
       return response;
+    };
 
+    try {
+      return await fetchPresentationData();
     } catch (error) {
-      console.error('Google Slides API error details:', error);
-      
       if (error instanceof Error) {
+        // Handle token expiration - retry with fresh token
+        if (error.message.includes('401') || error.message.includes('invalid_grant')) {
+          try {
+            return await fetchPresentationData();
+          } catch (retryError) {
+            throw new Error(`Authentication failed after retry: ${retryError instanceof Error ? retryError.message : String(retryError)}`);
+          }
+        }
+
         // Handle specific Google API errors
         if (error.message.includes('404')) {
           throw new Error(`Presentation not found with ID: ${presentationId}. Make sure the ID is correct and the presentation is accessible.`);
@@ -86,20 +94,14 @@ export const getSlideCount = createTool({
         if (error.message.includes('403')) {
           throw new Error(`Access denied to presentation ${presentationId}. Make sure you have permission to view this presentation.`);
         }
-        if (error.message.includes('401')) {
-          throw new Error(`Authentication failed. Please re-authenticate with Google or check your credentials.`);
-        }
 
-        // Re-throw the original error if it's already user-friendly
-        if (error.message.includes('credentials not found')) {
+        if (error.message.includes('Could not retrieve presentation data')) {
           throw error;
         }
-        
-        // For any other error, provide the actual error message
+
         throw new Error(`Failed to get slide count: ${error.message}`);
       }
 
-      // If it's not an Error instance, still provide details
       throw new Error(`Failed to get slide count: ${String(error)}`);
     }
   },

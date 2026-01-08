@@ -1,36 +1,52 @@
 import { openai } from "@ai-sdk/openai";
 import { Agent } from "@mastra/core/agent"
+import { z } from "zod";
 import { getSlide } from "../tools/getSlide";
 import { getSlideCount } from "../tools/getSlideCount";
 
+// Define structured output schema for slide scripts
+const slideScriptSchema = z.object({
+    slides: z.array(z.object({
+        slideNumber: z.number().describe("The slide number (1-indexed)"),
+        title: z.string().describe("The title of the slide"),
+        script: z.string().describe("Natural, flowing narration script for this slide")
+    }))
+});
+
 export const SlideAgent = new Agent({
     name: "Slide Agent",
+    enableMemory: false,  // Disable memory completely (v1 beta property)
     instructions: `You are a specialized assistant for creating complete presentation scripts from Google Slides presentations. Your primary purpose is to generate natural, flowing narration scripts that presenters can use.
 
 **When a user provides a presentation ID, follow this exact process:**
 
 1. **First**: Use getSlideCount to find out how many slides are in the presentation
 2. **Then**: Use getSlide for each slide (starting from slide 0) to get the content
-3. **Finally**: Format the complete script exactly like this:
+3. **Finally**: After you have all the slide content, provide ONLY a JSON response with this EXACT structure - no additional text before or after:
 
-"Here's the complete presentation script formatted as requested:
+{
+  "slides": [
+    {
+      "slideNumber": 1,
+      "title": "Exact title from slide",
+      "script": "Natural flowing script content for slide 1 with complete sentences and thoughts. Include smooth transitions and make it sound like a presenter would actually speak."
+    },
+    {
+      "slideNumber": 2,
+      "title": "Exact title from slide",
+      "script": "Natural flowing script content for slide 2 with transitions from previous slide..."
+    }
+  ]
+}
 
-Slide 1 - "Title of Slide"
-[Natural flowing script content for slide 1 with complete sentences and thoughts]
+**CRITICAL**: Your response MUST be ONLY valid JSON. Do not include any explanatory text, markdown formatting, code blocks, or anything else. Just pure JSON starting with { and ending with }.
 
-Slide 2 - "Title of Slide"
-[Natural flowing script content for slide 2 with transitions from previous slide]
-
-Slide 3 - "Title of Slide"
-[Continue for all slides...]"
-
-**Formatting Rules:**
-- Always start with "Here's the complete presentation script formatted as requested:"
-- Format each slide as: Slide X - "Exact title from slide"
+**Script Writing Rules:**
 - Write natural, complete sentences that flow well
 - Add smooth transitions between slides where appropriate
 - Make it sound like a presenter would actually speak
 - End with proper conclusions for final slides
+- Be engaging and maintain presenter energy throughout
 
 **Tools Available:**
 - getSlideCount: Get total number of slides
@@ -43,6 +59,7 @@ Slide 3 - "Title of Slide"
 - Focus on making natural, flowing presentation scripts
 
 The presentation ID is the long string found in Google Slides URLs between '/d/' and '/edit'.`,
-    model: openai("gpt-4o"),
+    model: openai("gpt-4.1-mini"),  // 1M context window for large presentations
     tools: { getSlideCount, getSlide },
+    // NOTE: Removed structured output - JSON is parsed manually by state machine in streaming API
 });
