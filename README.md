@@ -1,100 +1,110 @@
-# Slide Agent
+# VerbaSlide Slide Agent
 
-An AI-powered presentation script generator that transforms Google Slides presentations into natural, flowing narration scripts. Built with modern TypeScript frameworks and real-time streaming capabilities.
+AI-powered speaker notes generation service for VerbaSlide presentations.
 
-**Project Origin**: This project was inspired by an AI agents book I picked up after attending CascadiaJS 2026. The conference provided incredible insights into client-side AI, frontend/AI best practices, and the latest tools from the people building them. The welcoming Pacific Northwest dev community and their knowledge sharing motivated me to explore practical AI agent implementations using mastra. 
+## Overview
 
-![alt text](image.png)
-
-## How It Works
-
-The system operates through a sophisticated agent workflow:
-
-1. **Input Processing**: Users provide a Google Slides presentation ID or URL through a modern web interface
-2. **OAuth Authentication**: Secure integration with Google Slides API using OAuth 2.0 credentials
-3. **Slide Analysis**: The AI agent systematically retrieves each slide's content and metadata
-4. **Script Generation**: GPT-3.5-turbo processes the slide content to create natural presentation scripts
-5. **Real-time Streaming**: Generated content streams to the frontend using Server-Sent Events
-
-The agent follows a structured workflow: first determining slide count, then iterating through each slide to extract content, and finally generating cohesive presentation scripts with smooth transitions between slides.
+The Slide Agent is a Mastra-based AI service that analyzes Google Slides presentations and generates context-aware speaker notes using GPT-4.1o mini at the moment. It retrieves slide content (text and images(needs to be further tested)), processes it with a specialized prompt for an AI agent, and streams the generated notes back to the frontend via Server-Sent Events (SSE).
 
 ## Architecture
 
-### Backend (Mastra Framework)
-- **Mastra Core**: TypeScript-first agent framework for building AI applications
-- **Agent System**: Declarative agent configuration with built-in tool integration
-- **Google Slides Tools**: Custom tools for OAuth-authenticated API interactions
-- **Memory Management**: Conversation threading and context preservation
-- **Streaming Engine**: Real-time response streaming with VNext compatibility
+**Framework:** Mastra (AI agent orchestration)
+**Model:** OpenAI GPT-4.1o mini
+**Integration:** Google Slides API
+**Authentication:** Firebase Cloud Functions (backend OAuth tokens)
+**Streaming:** Server-Sent Events (SSE)
 
-### Frontend (Next.js)
-- **Next.js 14**: React framework with App Router and server-side streaming
-- **TypeScript**: Full type safety across components and API routes
-- **Server-Sent Events**: Real-time streaming communication protocol
-- **Component Architecture**: Modular React components with proper separation of concerns
-- **Storybook Integration**: Component development and testing environment
+## Components
 
-### Key Technologies
-- **AI SDK**: OpenAI integration with V2 model compatibility
-- **Google APIs**: Official Google Slides API client with OAuth 2.0
-- **Zod**: Runtime schema validation and type inference
-- **Modern CSS**: Custom properties for theming with dark/light mode support
+### Mastra Agent
+- **Location:** `mastra/agents/agent.ts`
+- **Purpose:** SlideAgent orchestrates the note generation process
+- **Capabilities:** Analyzes slide content, generates notes in multiple styles (concise, explanatory, formal, storytelling)
 
-## Project Structure
+### Tools
+- **getSlideCount** (`mastra/tools/getSlideCount.ts`) - Retrieves total number of slides in a presentation
+- **getSlide** (`mastra/tools/getSlide.ts`) - Fetches individual slide content including text and embedded images
+
+### API Server
+- **Location:** `api-server.js`
+- **Endpoint:** Express server on port 4000
+- **Purpose:** Handles note generation requests from the frontend
+
+### Frontend Integration
+- **Location:** `frontend/app/api/stream-slides/route.ts`
+- **Endpoint:** `GET /api/stream-slides?presentationId=X&style=Y`
+- **Response:** SSE stream with real-time note generation
+
+## How It Works
+
+1. Frontend sends presentation ID and style preference to SSE endpoint
+2. SSE route extracts user ID from Firebase session
+3. Request forwarded to Mastra API server with user context
+4. Mastra fetches OAuth token from backend Cloud Function
+5. SlideAgent uses tools to retrieve slide content from Google Slides API
+6. GPT-4o generates speaker notes based on slide content and style
+7. Notes streamed back to frontend via SSE events
+
+## Development
+
+### Prerequisites
+- Node.js 20 or 22+
+- OpenAI API key
+
+### Environment Variables
+Create `.env` in the `slide-agent/` directory:
+ 
+see .env.example for further assistance with .env variables needed
+
+### Running the Service
+
+**Production Service (Required)**
+```bash
+npm run dev:api
+```
+This starts the API server on port 3001 which the frontend uses.
+
+**Development Playground (Optional)**
+```bash
+npm run dev:mastra
+```
+This starts the Mastra playground UI on port 4111 for testing agents in the browser. Not required for the application to work.
+
+### Endpoints
+- API Server: http://localhost:3001 (required)
+- Mastra Playground: http://localhost:4111 (optional development tool)
+
+## Key Files
 
 ```
 slide-agent/
-├── mastra/                 # Mastra agent configuration
-│   ├── agents/            # AI agent definitions
-│   ├── tools/             # Google Slides API tools
-│   └── index.ts          # Main Mastra instance
-├── frontend/              # Next.js web application
-│   ├── app/              # App Router pages and API routes
-│   ├── components/       # React components
-│   └── lib/              # Utility functions
-└── credentials.json      # Google OAuth credentials
+├── mastra/
+│   ├── agents/agent.ts           # SlideAgent definition
+│   └── tools/
+│       ├── getSlideCount.ts      # Presentation metadata
+│       ├── getSlide.ts           # Individual slide content
+│       └── googleAuth.ts         # Google Slides client helper
+├── lib/
+│   ├── backend-auth.ts           # Backend OAuth token retrieval
+│   └── user-context.ts           # Request-scoped user ID
+├── frontend/app/api/stream-slides/route.ts  # SSE endpoint
+├── api-server.js                 # Express API server
+└── .env                          # OpenAI API key
+
 ```
 
-## Setup
+## Note Generation Styles
 
-1. **Install Dependencies**
-```bash
-npm install
-cd frontend && npm install
-```
+- **concise** - Brief, bullet-point notes
+- **explanatory** - Detailed explanations and context
+- **formal** - Professional, structured notes
+- **storytelling** - Narrative-driven presentation flow
 
-2. **Google OAuth Setup**
-- Create a Google Cloud Console project
-- Enable Google Slides API
-- Create OAuth 2.0 desktop credentials
-- Save as `credentials.json` in project root
+## Dependencies
 
-3. **Environment Variables**
-```bash
-# .env
-OPENAI_API_KEY=your_openai_api_key
-```
-
-4. **Development**
-```bash
-# Terminal 1: Start Mastra backend
-npm run dev
-
-# Terminal 2: Start Next.js frontend
-cd frontend && npm run dev
-```
-
-The application runs on `localhost:3000` with the Mastra API on `localhost:4111`.
-
-## Features
-
-- **Real-time Streaming**: Progressive script generation with live updates
-- **Google Slides Integration**: Direct OAuth-authenticated access to presentations
-- **Natural Language Processing**: Context-aware script generation with smooth transitions
-- **Modern UI**: Royal blue themed interface with responsive design
-- **Component Testing**: Storybook integration for component development
-- **Type Safety**: Full TypeScript implementation across the stack
-
-## Usage
-
-Enter a Google Slides URL or presentation ID into the web interface. The system will authenticate with Google, analyze the presentation structure, and generate a complete narration script in real-time. The generated script includes natural transitions, proper slide formatting, and presenter-friendly language.
+- `@mastra/core` - AI agent framework
+- `@ai-sdk/openai` - OpenAI GPT-4o integration
+- `googleapis` - Google Slides API client
+- `firebase-admin` - Backend authentication
+- `express` + `cors` - API server
+- `dotenv` - Environment configuration

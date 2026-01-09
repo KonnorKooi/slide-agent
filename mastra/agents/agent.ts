@@ -15,7 +15,7 @@ const slideScriptSchema = z.object({
 
 export const SlideAgent = new Agent({
     name: "Slide Agent",
-    enableMemory: false,  // Disable memory completely (v1 beta property)
+    // enableMemory: false,  // Disable memory completely (v1 beta property)
     instructions: `You are a specialized assistant for creating complete presentation scripts from Google Slides presentations. Your primary purpose is to generate natural, flowing narration scripts that presenters can use.
 
 **When a user provides a presentation ID, follow this exact process:**
@@ -59,7 +59,6 @@ export const SlideAgent = new Agent({
 - Focus on making natural, flowing presentation scripts
 
 The presentation ID is the long string found in Google Slides URLs between '/d/' and '/edit'.`,
-    model: openai("gpt-4.1-mini"),  // 1M context window for large presentations
+    model: openai("gpt-4.1-mini"),  // 4.1 mini has 1M context window for large presentations
     tools: { getSlideCount, getSlide },
-    // NOTE: Removed structured output - JSON is parsed manually by state machine in streaming API
 });

@@ -5,8 +5,6 @@
  * The userId is set by the API route before agent execution and cleared after.
  */
 
-// Global store for current request's userId
-// Set before agent execution, cleared after
 let currentUserId: string | null = null;
 
 export function setUserId(userId: string) {

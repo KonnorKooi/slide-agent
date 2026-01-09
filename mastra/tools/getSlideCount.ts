@@ -35,7 +35,6 @@ export const getSlideCount = createTool({
       throw new Error('Missing required parameters: presentationId');
     }
 
-    // Helper function to fetch presentation metadata
     const fetchPresentationData = async () => {
       const slides = await getSlidesClient(userId);
 
@@ -51,7 +50,6 @@ export const getSlideCount = createTool({
 
       const slideCount = presentation.slides?.length || 0;
 
-      // Build the response
       const response: any = {
         slideCount,
         presentationId,

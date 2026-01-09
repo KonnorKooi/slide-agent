@@ -1,6 +1,6 @@
 /**
  * Backend authentication utility for fetching user OAuth tokens
- * from Firebase backend and creating authenticated Google Slides clients
+ * from Firebase backend and creating authenticated Google Slides clients for the tools
  */
 
 import { google } from 'googleapis';
@@ -19,7 +19,7 @@ export async function fetchUserAccessToken(userId: string): Promise<string> {
       body: JSON.stringify({
         data: {
           userId,
-          serverApiKey  // Add server API key for authentication
+          serverApiKey
         }
       })
     });
@@ -60,12 +60,9 @@ export function createOAuth2Client(accessToken: string) {
  * Get authenticated Google Slides client using user's token from backend
  */
 export async function getSlidesClientWithUserId(userId: string) {
-  // Fetch fresh access token from backend
   const accessToken = await fetchUserAccessToken(userId);
 
-  // Create OAuth2 client with token
   const auth = createOAuth2Client(accessToken);
 
-  // Return Slides API client
   return google.slides({ version: 'v1', auth });
 }

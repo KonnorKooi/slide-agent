@@ -5,7 +5,6 @@
  * allowing the frontend to call the agent via REST API.
  */
 
-// Load environment variables FIRST
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -17,11 +16,9 @@ import { setUserId, getUserId, clearUserId } from './lib/user-context.ts';
 const app = express();
 const PORT = process.env.API_PORT || 3001;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'mastra-api', timestamp: new Date().toISOString() });
 });
@@ -36,17 +33,14 @@ app.post('/api/stream-with-user', async (req, res) => {
   try {
     const { messages, memory, userId } = req.body;
 
-    // Validate userId
     if (!userId) {
       console.error('[API] Missing userId in request body');
       return res.status(400).json({ error: 'Missing userId in request body' });
     }
 
-    // Set userId globally for this request
     setUserId(userId);
 
     try {
-      // Call Mastra agent with correct signature: stream(messages, options)
       const stream = await SlideAgent.stream(messages);
 
       // Set SSE headers
