@@ -99,7 +99,7 @@ Google access tokens expire after one hour. Rather than tracking expiry in this 
 
 ## Request-Scoped User Context
 
-Mastra tools do not receive the HTTP request as a parameter, they only receive their declared input schema. To pass the `userId` from the API request into the tools without threading it through every function signature, the service uses a module-level variable as a request-scoped store.
+Mastra tools do not receive the HTTP request as a parameter, they only receive their declared input schema. To pass the `userId` from the API request into the tools without threading it through every function signature, the service uses Node's built-in `AsyncLocalStorage`.
 
 **File:** `lib/user-context.ts`
 
@@ -107,22 +107,19 @@ Mastra tools do not receive the HTTP request as a parameter, they only receive t
 API request arrives with userId
   |
   v
-setUserId(userId)          -- stores userId in module-level variable
+runWithUserId(userId, async () => { ... })   -- creates an isolated async context
   |
   v
-SlideAgent.stream() runs
+SlideAgent.stream() runs inside that context
   |
-  +-- getSlideCount tool calls getUserId()   -- reads from module variable
-  +-- getSlide tool calls getUserId()        -- reads from module variable
-  |
-  v
-Stream finishes (or errors)
+  +-- getSlideCount tool calls getUserId()   -- reads from its own async context
+  +-- getSlide tool calls getUserId()        -- reads from its own async context
   |
   v
-clearUserId()              -- resets module variable
+Stream finishes -- async context is automatically discarded
 ```
 
-**Concurrency note:** This pattern works correctly only when requests are processed one at a time. If the service ever handles concurrent requests, this global state will mix user IDs across requests. A proper solution would be to pass context through Mastra's thread or memory system, or to run one process instance per request.
+`AsyncLocalStorage` from Node's `async_hooks` module propagates the stored value through the entire async call chain (including `await`, `for await`, and callbacks) without any explicit cleanup step. Each concurrent request has its own isolated store, so concurrent users cannot overwrite each other's `userId`.
 
 ---
 

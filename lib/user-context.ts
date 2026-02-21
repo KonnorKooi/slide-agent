@@ -1,23 +1,22 @@
 /**
- * Global user context management for Mastra tool execution
+ * Request-scoped user context management for Mastra tool execution
  *
- * This module provides a way to inject userId into tool execution context.
- * The userId is set by the API route before agent execution and cleared after.
+ * Uses AsyncLocalStorage so concurrent requests each have their own isolated
+ * userId. Tools call getUserId() without needing the userId passed explicitly.
  */
 
-let currentUserId: string | null = null;
+import { AsyncLocalStorage } from 'async_hooks';
 
-export function setUserId(userId: string) {
-  currentUserId = userId;
+const storage = new AsyncLocalStorage<{ userId: string }>();
+
+export function runWithUserId<T>(userId: string, fn: () => T): T {
+  return storage.run({ userId }, fn);
 }
 
 export function getUserId(): string {
-  if (!currentUserId) {
-    throw new Error('No userId available. Must be set before tool execution.');
+  const store = storage.getStore();
+  if (!store) {
+    throw new Error('No userId available. Must be called within runWithUserId().');
   }
-  return currentUserId;
-}
-
-export function clearUserId() {
-  currentUserId = null;
+  return store.userId;
 }

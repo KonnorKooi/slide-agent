@@ -11,7 +11,7 @@ dotenv.config();
 import express from 'express';
 import cors from 'cors';
 import { SlideAgent } from './mastra/agents/agent.ts';
-import { setUserId, getUserId, clearUserId } from './lib/user-context.ts';
+import { runWithUserId } from './lib/user-context.ts';
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
@@ -38,9 +38,7 @@ app.post('/api/stream-with-user', async (req, res) => {
       return res.status(400).json({ error: 'Missing userId in request body' });
     }
 
-    setUserId(userId);
-
-    try {
+    await runWithUserId(userId, async () => {
       const stream = await SlideAgent.stream(messages);
 
       // Set SSE headers
@@ -50,27 +48,17 @@ app.post('/api/stream-with-user', async (req, res) => {
       res.setHeader('Access-Control-Allow-Origin', '*');
 
       // Mastra returns a MastraModelOutput with textStream property
-      try {
-        for await (const chunk of stream.textStream) {
-          const sseData = `data: ${JSON.stringify({ type: 'text-delta', payload: { text: chunk } })}\n\n`;
-          res.write(sseData);
-        }
-
-        // Send completion event
-        res.write(`data: ${JSON.stringify({ type: 'finish' })}\n\n`);
-      } finally {
-        clearUserId();
-        res.end();
+      for await (const chunk of stream.textStream) {
+        const sseData = `data: ${JSON.stringify({ type: 'text-delta', payload: { text: chunk } })}\n\n`;
+        res.write(sseData);
       }
 
-    } catch (streamError) {
-      clearUserId();
-      console.error('[API] Error during streaming:', streamError);
-      throw streamError;
-    }
+      // Send completion event
+      res.write(`data: ${JSON.stringify({ type: 'finish' })}\n\n`);
+      res.end();
+    });
 
   } catch (error) {
-    clearUserId();
     console.error('[API] Error in /api/stream-with-user:', error);
 
     // If headers already sent, can't send error response
